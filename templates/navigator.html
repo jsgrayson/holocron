@@ -1,11 +1,20 @@
 {% extends 'base.html' %}
 
 {% block content %}
+<!-- Hero Header -->
+<div class="row mb-5">
+    <div class="col-md-12">
+        <div class="hero-header p-5 text-center">
+            <h1 class="display-3 fw-bold mb-3 hero-title">🧭 The Navigator</h1>
+            <p class="lead hero-subtitle mb-0">
+                <i class="fas fa-calendar-check me-2"></i>Lockout tracking & farm availability across all characters
+            </p>
+            <div class="animated-border mt-4"></div>
+        </div>
+    </div>
+</div>
 <div class="row mb-4">
     <div class="col-md-12">
-        <h1 class="display-5">The Navigator</h1>
-        <p class="lead">Bored? Here is what you can farm right now.</p>
-
         <div class="mb-4">
             <div class="form-check form-check-inline">
                 <input class="form-check-input" type="checkbox" id="toggleRaid" checked onchange="filterActivities()">

@@ -1,0 +1,204 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<!-- Hero Header with Glassmorphism -->
+<div class="row mb-5">
+    <div class="col-md-12">
+        <div class="hero-header p-5 text-center">
+            <h1 class="display-3 fw-bold mb-3 hero-title">⚔️ Command Center</h1>
+            <p class="lead hero-subtitle mb-0">
+                <i class="fas fa-chart-line me-2"></i>Real-time intelligence across all Holocron systems
+            </p>
+            <div class="animated-border mt-4"></div>
+        </div>
+    </div>
+</div>
+
+<!-- Row 1: Key Metrics -->
+<div class="row mb-4">
+    <div class="col-md-3 mb-3">
+        <a href="http://localhost:5002" target="_blank" class="text-decoration-none">
+            <div class="card widget-card">
+                <div class="card-body text-center">
+                    <h6 class="text-light mb-2"><i class="fas fa-paw me-2"></i>Pet Collection</h6>
+                    <h2 class="mb-0 text-white fw-bold">{{ pet_stats.total or 0 }}</h2>
+                    <small class="text-success">{{ pet_stats.unique or 0 }} unique species</small>
+                </div>
+            </div>
+        </a>
+    </div>
+    <div class="col-md-3 mb-3">
+        <a href="/codex" class="text-decoration-none">
+            <div class="card widget-card">
+                <div class="card-body text-center">
+                    <h6 class="text-light mb-2"><i class="fas fa-book me-2"></i>Campaign Progress</h6>
+                    <h2 class="mb-0 text-white fw-bold">{{ campaign_stats.avg_progress or 0 }}%</h2>
+                    <small class="text-info">{{ campaign_stats.campaigns_complete or 0 }}/{{
+                        campaign_stats.total_campaigns or 0 }} complete</small>
+                </div>
+            </div>
+        </a>
+    </div>
+    <div class="col-md-3 mb-3">
+        <a href="/liquidation" class="text-decoration-none">
+            <div class="card widget-card">
+                <div class="card-body text-center">
+                    <h6 class="text-light mb-2"><i class="fas fa-coins me-2"></i>Liquidation Assets</h6>
+                    <h2 class="mb-0 text-white fw-bold">{{ liquidation_stats.item_count or 0 }}</h2>
+                    <small class="text-warning">{{ liquidation_stats.total_value or 0 }}g value</small>
+                </div>
+            </div>
+        </a>
+    </div>
+    <div class="col-md-3 mb-3">
+        <a href="/diplomat" class="text-decoration-none">
+            <div class="card widget-card">
+                <div class="card-body text-center">
+                    <h6 class="text-light mb-2"><i class="fas fa-trophy me-2"></i>Rep Near Paragon</h6>
+                    <h2 class="mb-0 text-white fw-bold">{{ diplomat_stats.close_to_paragon or 0 }}</h2>
+                    <small class="text-danger">Factions > 80%</small>
+                </div>
+            </div>
+        </a>
+    </div>
+</div>
+
+<!-- Row 2: Campaign Status & Pet Strategies -->
+<div class="row mb-4">
+    <div class="col-md-6 mb-3">
+        <div class="card h-100">
+            <div class="card-header bg-dark text-white d-flex justify-content-between">
+                <span>Active Campaigns</span>
+                <a href="/codex" class="badge bg-primary text-decoration-none">View All</a>
+            </div>
+            <div class="card-body">
+                {% if campaigns %}
+                <ul class="list-group list-group-flush">
+                    {% for campaign in campaigns[:5] %}
+                    <li
+                        class="list-group-item bg-transparent text-white d-flex justify-content-between align-items-center">
+                        <span class="text-white">{{ campaign.name }}</span>
+                        <div>
+                            <span
+                                class="badge bg-{% if campaign.progress == 100 %}success{% elif campaign.progress > 50 %}warning{% else %}secondary{% endif %}">
+                                {{ campaign.progress }}%
+                            </span>
+                        </div>
+                    </li>
+                    {% endfor %}
+                </ul>
+                {% else %}
+                <p class="text-light">No campaign data available</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-6 mb-3">
+        <div class="card h-100">
+            <div class="card-header bg-dark text-white d-flex justify-content-between">
+                <span>PetWeaver Status</span>
+                <a href="http://localhost:5002" target="_blank"
+                    class="badge bg-info text-dark text-decoration-none">Open PetWeaver</a>
+            </div>
+            <div class="card-body">
+                <div class="d-flex justify-content-between mb-2">
+                    <span class="text-light">Strategies Ready:</span>
+                    <span class="badge bg-success">{{ pet_stats.strategies_ready or 0 }}</span>
+                </div>
+                <div class="d-flex justify-content-between mb-2">
+                    <span class="text-light">Safe to Sell Pets:</span>
+                    <span class="badge bg-warning text-dark">{{ pet_stats.duplicates or 0 }}</span>
+                </div>
+                <div class="d-flex justify-content-between mb-2">
+                    <span class="text-light">Missing Species:</span>
+                    <span class="badge bg-danger">{{ pet_stats.missing or 0 }}</span>
+                </div>
+                <hr>
+                <a href="http://localhost:5002/genetic" target="_blank"
+                    class="btn btn-sm btn-outline-primary w-100">Genetic Team Builder</a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Row 3: Navigator & Liquidation -->
+<div class="row mb-4">
+    <div class="col-md-6 mb-3">
+        <div class="card h-100">
+            <div class="card-header bg-dark text-white d-flex justify-content-between">
+                <span>Available Activities</span>
+                <a href="/navigator" class="badge bg-primary text-decoration-none">View All</a>
+            </div>
+            <div class="card-body">
+                {% if activities %}
+                <ul class="list-group list-group-flush">
+                    {% for activity in activities[:5] %}
+                    <li class="list-group-item bg-transparent text-white">
+                        <div class="d-flex justify-content-between">
+                            <strong class="text-white">{{ activity.drop_name }}</strong>
+                            <span class="badge bg-info text-dark">{{ activity.instance_name }}</span>
+                        </div>
+                        <small class="text-light">Available on {{ activity.available_count }} alts</small>
+                    </li>
+                    {% endfor %}
+                </ul>
+                {% else %}
+                <p class="text-light">No activities available</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-6 mb-3">
+        <div class="card h-100">
+            <div class="card-header bg-dark text-white d-flex justify-content-between">
+                <span>Top Liquidation Items</span>
+                <a href="/liquidation" class="badge bg-primary text-decoration-none">Manage</a>
+            </div>
+            <div class="card-body">
+                {% if liquidation_items %}
+                <ul class="list-group list-group-flush">
+                    {% for item in liquidation_items[:5] %}
+                    <li
+                        class="list-group-item bg-transparent text-white d-flex justify-content-between align-items-center">
+                        <span class="text-white">{{ item.name }} ({{ item.count }})</span>
+                        <span class="badge bg-warning text-dark">{{ item.total_value }}g</span>
+                    </li>
+                    {% endfor %}
+                </ul>
+                {% else %}
+                <p class="text-light">No items to liquidate</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Row 4: System Status -->
+<div class="row">
+    <div class="col-md-12">
+        <div class="card">
+            <div class="card-header bg-secondary text-white">System Status</div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-4">
+                        <h6>Database</h6>
+                        <span class="badge bg-success">Connected</span>
+                    </div>
+                    <div class="col-md-4">
+                        <h6>PetWeaver</h6>
+                        <a href="http://localhost:5002/api/status" target="_blank" class="badge bg-info text-dark">Check
+                            Status</a>
+                    </div>
+                    <div class="col-md-4">
+                        <h6>Last Data Sync</h6>
+                        <span class="text-light">{{ last_sync or 'Never' }}</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}

@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SkillWeaver - Talent & Gear Optimizer</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="/static/holocron-theme.css">
+</head>
+
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark mb-4">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="/" style="color: var(--wow-gold); font-weight: bold;">
+                ⚔️ SkillWeaver
+            </a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav">
+                    <li class="nav-item"><a class="nav-link" href="/">Dashboard</a></li>
+                    <li class="nav-item"><a class="nav-link" href="/talents">Talents</a></li>
+                    <li class="nav-item"><a class="nav-link" href="/gear">Gear Optimizer</a></li>
+                    <li class="nav-item"><a class="nav-link" href="/rotations">Rotations</a></li>
+                    <li class="nav-item"><a class="nav-link" href="/characters">Characters</a></li>
+                    <li class="nav-item"><a class="nav-link" href="http://localhost:5001" target="_blank">Holocron ↗</a>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container">
+        <!-- Hero Header -->
+        <div class="row mb-5">
+            <div class="col-md-12">
+                <div class="hero-header">
+                    <h1 class="hero-title">⚔️ SkillWeaver</h1>
+                    <p class="hero-subtitle">
+                        <i class="fas fa-cogs me-2"></i>Talent optimization & gear simulation powered by SimulationCraft
+                    </p>
+                    <div class="animated-border"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Character Selection -->
+        <div class="row mb-4">
+            <div class="col-md-12">
+                <div class="card">
+                    <div class="card-header bg-dark text-white">
+                        <i class="fas fa-users me-2"></i>Active Characters
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-md-3 mb-3">
+                                <div class="card bg-transparent border-primary">
+                                    <div class="card-body text-center">
+                                        <h5 class="text-white">Thunderfist</h5>
+                                        <p class="text-light mb-2">Enhancement Shaman</p>
+                                        <span class="badge bg-primary">Item Level 489</span><br>
+                                        <button class="btn btn-sm btn-outline-primary mt-2">Optimize</button>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-3 mb-3">
+                                <div class="card bg-transparent border-secondary">
+                                    <div class="card-body text-center">
+                                        <h5 class="text-white">Shadowmend</h5>
+                                        <p class="text-light mb-2">Shadow Priest</p>
+                                        <span class="badge bg-secondary">Item Level 476</span><br>
+                                        <button class="btn btn-sm btn-outline-secondary mt-2">Optimize</button>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-3 mb-3">
+                                <div class="card bg-transparent border-success">
+                                    <div class="card-body text-center">
+                                        <h5 class="text-white">Moonfire</h5>
+                                        <p class="text-light mb-2">Balance Druid</p>
+                                        <span class="badge bg-success">Item Level 492</span><br>
+                                        <button class="btn btn-sm btn-outline-success mt-2">Optimize</button>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-3 mb-3">
+                                <div class="card bg-transparent border-warning">
+                                    <div class="card-body text-center">
+                                        <h5 class="text-white">Firestorm</h5>
+                                        <p class="text-light mb-2">Fire Mage</p>
+                                        <span class="badge bg-warning text-dark">Item Level 485</span><br>
+                                        <button class="btn btn-sm btn-outline-warning mt-2">Optimize</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Talent Optimizer -->
+        <div class="row mb-4">
+            <div class="col-md-6 mb-3">
+                <div class="card h-100">
+                    <div class="card-header bg-dark text-white">
+                        <i class="fas fa-sitemap me-2"></i>Talent Recommendations (Thunderfist)
+                    </div>
+                    <div class="card-body">
+                        <div class="mb-3">
+                            <div class="d-flex justify-content-between align-items-center mb-2">
+                                <span class="text-light">Current Build:</span>
+                                <span class="badge bg-info text-dark">Raid - ST</span>
+                            </div>
+                            <div class="progress" style="height: 25px;">
+                                <div class="progress-bar bg-success" style="width: 92%;">
+                                    92% Optimal (4,250 DPS)
+                                </div>
+                            </div>
+                        </div>
+                        <hr>
+                        <h6 class="text-warning"><i class="fas fa-exclamation-triangle me-2"></i>Suggested Changes:</h6>
+                        <ul class="list-group list-group-flush">
+                            <li class="list-group-item bg-transparent text-white">
+                                <strong>Row 6:</strong> Swap "Hailstorm" → "Elemental Spirits"
+                                <span class="badge bg-success float-end">+85 DPS</span>
+                            </li>
+                            <li class="list-group-item bg-transparent text-white">
+                                <strong>Row 9:</strong> Swap "Fire Nova" → "Crash Lightning"
+                                <span class="badge bg-warning text-dark float-end">+52 DPS</span>
+                            </li>
+                        </ul>
+                        <button class="btn btn-primary w-100 mt-3">Apply & Export Loadout</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-md-6 mb-3">
+                <div class="card h-100">
+                    <div class="card-header bg-dark text-white">
+                        <i class="fas fa-shield-alt me-2"></i>Gear Upgrade Suggestions
+                    </div>
+                    <div class="card-body">
+                        <div class="list-group list-group-flush">
+                            <div class="list-group-item bg-transparent text-white">
+                                <div class="d-flex justify-content-between align-items-start">
+                                    <div>
+                                        <strong class="text-warning">Weapon (Main Hand)</strong>
+                                        <p class="mb-0 text-light small">
+                                            Upgrade: Stormshaper's Blade (493) → Fyr'alath (496)<br>
+                                            <span class="text-success">+210 DPS gain</span>
+                                        </p>
+                                    </div>
+                                    <span class="badge bg-danger">Priority</span>
+                                </div>
+                            </div>
+                            <div class="list-group-item bg-transparent text-white">
+                                <div class="d-flex justify-content-between align-items-start">
+                                    <div>
+                                        <strong class="text-warning">Trinket 2</strong>
+                                        <p class="mb-0 text-light small">
+                                            Upgrade: Iridescence (486) → Smold's Compass (489)<br>
+                                            <span class="text-info">+95 DPS gain</span>
+                                        </p>
+                                    </div>
+                                    <span class="badge bg-warning text-dark">Medium</span>
+                                </div>
+                            </div>
+                            <div class="list-group-item bg-transparent text-white">
+                                <div class="d-flex justify-content-between align-items-start">
+                                    <div>
+                                        <strong class="text-warning">Ring 1</strong>
+                                        <p class="mb-0 text-light small">
+                                            Enchant: Critical Strike II → Haste III<br>
+                                            <span class="text-success">+42 DPS gain</span>
+                                        </p>
+                                    </div>
+                                    <span class="badge bg-success">Easy Win</span>
+                                </div>
+                            </div>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Rotation & Stat Weights -->
+            <div class="row">
+                <div class="col-md-6 mb-3">
+                    <div class="card">
+                        <div class="card-header bg-dark text-white">
+                            <i class="fas fa-sync-alt me-2"></i>Optimal Rotation (Enhancement)
+                        </div>
+                        <div class="card-body">
+                            <ol class="text-light">
+                                <li><strong>Feral Spirit</strong> on cooldown</li>
+                                <li><strong>Stormstrike</strong> if Maelstrom Weapon ≥ 5</li>
+                                <li><strong>Lava Lash</strong> if Fire Nova active</li>
+                                <li><strong>Crash Lightning</strong> for AoE (3+ targets)</li>
+                                <li><strong>Flametongue Weapon</strong> if &lt; 5s remaining</li>
+                                <li><strong>Frost Shock</strong> as filler</li>
+                            </ol>
+                            <button class="btn btn-outline-primary btn-sm w-100">Export to WeakAura</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-md-6 mb-3">
+                    <div class="card">
+                        <div class="card-header bg-dark text-white">
+                            <i class="fas fa-chart-bar me-2"></i>Stat Weights (Current Build)
+                        </div>
+                        <div class="card-body">
+                            <div class="mb-2">
+                                <div class="d-flex justify-content-between">
+                                    <span class="text-light">Haste</span>
+                                    <span class="text-warning">2.12</span>
+                                </div>
+                                <div class="progress" style="height: 20px;">
+                                    <div class="progress-bar bg-warning" style="width: 100%;"></div>
+                                </div>
+                            </div>
+                            <div class="mb-2">
+                                <div class="d-flex justify-content-between">
+                                    <span class="text-light">Mastery</span>
+                                    <span class="text-info">1.95</span>
+                                </div>
+                                <div class="progress" style="height: 20px;">
+                                    <div class="progress-bar bg-info" style="width: 92%;"></div>
+                                </div>
+                            </div>
+                            <div class="mb-2">
+                                <div class="d-flex justify-content-between">
+                                    <span class="text-light">Critical Strike</span>
+                                    <span class="text-success">1.88</span>
+                                </div>
+                                <div class="progress" style="height: 20px;">
+                                    <div class="progress-bar bg-success" style="width: 89%;"></div>
+                                </div>
+                            </div>
+                            <div>
+                                <div class="d-flex justify-content-between">
+                                    <span class="text-light">Versatility</span>
+                                    <span class="text-danger">1.42</span>
+                                </div>
+                                <div class="progress" style="height: 20px;">
+                                    <div class="progress-bar bg-danger" style="width: 67%;"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+
+</html>
