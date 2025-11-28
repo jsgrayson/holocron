@@ -1,0 +1,82 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-md-12">
+        <h1 class="display-5">The Navigator</h1>
+        <p class="lead">Bored? Here is what you can farm right now.</p>
+
+        <div class="mb-4">
+            <div class="form-check form-check-inline">
+                <input class="form-check-input" type="checkbox" id="toggleRaid" checked onchange="filterActivities()">
+                <label class="form-check-label" for="toggleRaid">Raids</label>
+            </div>
+            <div class="form-check form-check-inline">
+                <input class="form-check-input" type="checkbox" id="toggleDungeon" checked
+                    onchange="filterActivities()">
+                <label class="form-check-label" for="toggleDungeon">Dungeons</label>
+            </div>
+            <div class="form-check form-check-inline">
+                <input class="form-check-input" type="checkbox" id="toggleHoliday" checked
+                    onchange="filterActivities()">
+                <label class="form-check-label" for="toggleHoliday">Holidays</label>
+            </div>
+            <div class="form-check form-check-inline">
+                <input class="form-check-input" type="checkbox" id="toggleReputation" checked
+                    onchange="filterActivities()">
+                <label class="form-check-label" for="toggleReputation">Reputation</label>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row" id="activityGrid">
+    {% for activity in activities %}
+    <div class="col-md-4 mb-4 activity-card" data-type="{{ activity.type }}">
+        <div class="card h-100">
+            <div
+                class="card-header {% if activity.type == 'Holiday' %}bg-danger{% elif activity.type == 'Reputation' %}bg-warning text-dark{% else %}bg-primary{% endif %} text-white">
+                {{ activity.instance_name }}
+            </div>
+            <div class="card-body">
+                <h5 class="card-title">{{ activity.drop_name }}</h5>
+                <p class="card-text">
+                    <span class="badge bg-secondary">{{ activity.type }}</span>
+                    <span class="badge bg-info text-dark">{{ activity.expansion }}</span>
+                </p>
+                <p class="card-text">
+                    Available on <strong>{{ activity.available_count }}</strong> characters.
+                </p>
+                {% if activity.type == 'Reputation' %}
+                <a href="/diplomat" class="btn btn-outline-dark btn-sm">Open Diplomat</a>
+                {% else %}
+                <button class="btn btn-outline-light btn-sm">View Alts</button>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+<script>
+    function filterActivities() {
+        const showRaid = document.getElementById('toggleRaid').checked;
+        const showDungeon = document.getElementById('toggleDungeon').checked;
+        const showHoliday = document.getElementById('toggleHoliday').checked;
+        const showReputation = document.getElementById('toggleReputation').checked;
+
+        const cards = document.querySelectorAll('.activity-card');
+        cards.forEach(card => {
+            const type = card.getAttribute('data-type');
+            let visible = false;
+
+            if (type === 'Raid' && showRaid) visible = true;
+            if (type === 'Dungeon' && showDungeon) visible = true;
+            if (type === 'Holiday' && showHoliday) visible = true;
+            if (type === 'Reputation' && showReputation) visible = true;
+
+            card.style.display = visible ? 'block' : 'none';
+        });
+    }
+</script>
+{% endblock %}

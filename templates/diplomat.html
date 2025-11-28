@@ -1,0 +1,75 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-md-12">
+        <h1 class="display-5">The Diplomat</h1>
+        <p class="lead">Renown & Paragon Optimization.</p>
+    </div>
+</div>
+
+<!-- Paragon Meter -->
+<div class="row mb-4">
+    <div class="col-md-12">
+        <div class="card">
+            <div class="card-header bg-dark text-white">Paragon Meter (Warband)</div>
+            <div class="card-body">
+                {% for faction in factions %}
+                <div class="mb-3">
+                    <div class="d-flex justify-content-between">
+                        <strong>{{ faction.name }}</strong>
+                        <span>{{ faction.current }} / {{ faction.max }}</span>
+                    </div>
+                    <div class="progress" style="height: 25px;">
+                        <div class="progress-bar {% if faction.is_close %}bg-warning text-dark progress-bar-striped progress-bar-animated{% else %}bg-info{% endif %}"
+                            role="progressbar" style="width: {{ faction.percent }}%;"
+                            aria-valuenow="{{ faction.percent }}" aria-valuemin="0" aria-valuemax="100">
+                            {{ faction.percent }}%
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Reputation Sniper -->
+<div class="row">
+    <div class="col-md-12">
+        <div class="card">
+            <div class="card-header bg-success text-white">Reputation Sniper (Recommended Actions)</div>
+            <div class="card-body p-0">
+                <table class="table table-striped mb-0">
+                    <thead>
+                        <tr>
+                            <th>Zone</th>
+                            <th>Quest</th>
+                            <th>Reward</th>
+                            <th>Efficiency</th>
+                            <th>Assigned To</th>
+                            <th>Action</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for job in sniper %}
+                        <tr>
+                            <td>{{ job.zone }}</td>
+                            <td>{{ job.quest }}</td>
+                            <td><span class="badge bg-primary">{{ job.reward }}</span></td>
+                            <td>{{ job.efficiency }}</td>
+                            <td><strong>{{ job.assigned_char }}</strong></td>
+                            <td><button class="btn btn-sm btn-outline-success">Track</button></td>
+                        </tr>
+                        {% else %}
+                        <tr>
+                            <td colspan="6" class="text-center">No high-efficiency jobs found. Relax!</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
