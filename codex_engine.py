@@ -50,6 +50,8 @@ class Instance:
     type: str  # "Raid", "Dungeon"
     encounters: List[Encounter]
 
+from scrapers.wowhead_scraper import WowheadScraper
+
 class CodexEngine:
     """
     Engine for The Codex encounter guide
@@ -57,7 +59,68 @@ class CodexEngine:
     
     def __init__(self):
         self.instances = {}
+        self.scraper = WowheadScraper()
         
+    def load_real_data(self):
+        """Load real data from Wowhead Scraper"""
+        print("Fetching real data from Wowhead...")
+        
+        # Get Nerub-ar Palace data
+        raid_data = self.scraper.get_nerubar_palace_data()
+        
+        if not raid_data:
+            print("Failed to fetch data. Falling back to mock data.")
+            self.load_mock_data()
+            return
+
+        # Parse Encounters
+        encounters = []
+        for enc_data in raid_data["encounters"]:
+            # Parse Abilities
+            abilities = []
+            for ab_data in enc_data.get("abilities", []):
+                # Map importance string to Role enum if possible, or default
+                # The scraper returns "Tank", "Healer", "DPS", "Important", "Critical"
+                # We need to map these to Role enum and importance string
+                
+                role = Role.EVERYONE
+                if ab_data.get("importance") == "Tank":
+                    role = Role.TANK
+                elif ab_data.get("importance") == "Healer":
+                    role = Role.HEALER
+                elif ab_data.get("importance") == "DPS":
+                    role = Role.DPS
+                
+                abilities.append(Ability(
+                    name=ab_data["name"],
+                    description=ab_data["description"],
+                    role=role,
+                    importance=ab_data.get("importance", "Medium"),
+                    phase=1 # Default phase
+                ))
+            
+            # Parse Loot (Scraper doesn't return loot yet, so empty list)
+            loot = [] 
+            
+            encounters.append(Encounter(
+                id=enc_data["id"],
+                name=enc_data["name"],
+                description=enc_data["description"],
+                abilities=abilities,
+                loot=loot
+            ))
+            
+        # Create Instance
+        instance = Instance(
+            id=raid_data["id"],
+            name=raid_data["name"],
+            type="Raid",
+            encounters=encounters
+        )
+        
+        self.instances[instance.id] = instance
+        print(f"✓ Loaded {instance.name} with {len(instance.encounters)} encounters from Wowhead")
+
     def load_mock_data(self):
         """Load mock data for Nerub-ar Palace"""
         

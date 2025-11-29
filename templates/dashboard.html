@@ -38,17 +38,36 @@
         </div>
     </div>
 
-    <!-- Diplomat -->
+    <!-- Diplomat (Paragon Meter) -->
     <div class="col-md-4">
         <div class="card h-100 bg-dark text-white border-secondary">
             <div class="card-header d-flex justify-content-between align-items-center">
-                <h5 class="mb-0"><i class="fas fa-handshake me-2 text-warning"></i>Diplomat</h5>
-                <span class="badge bg-warning text-dark">Opportunity</span>
+                <h5 class="mb-0"><i class="fas fa-handshake me-2 text-warning"></i>Paragon Meter</h5>
+                <span class="badge bg-warning text-dark">{{ summary.modules.paragon_opportunities|length }}
+                    Opportunities</span>
             </div>
             <div class="card-body">
-                <h5 class="text-center mb-1">{{ summary.modules.diplomat.best_opportunity }}</h5>
-                <p class="text-muted text-center mb-3">{{ summary.modules.diplomat.action }}</p>
-                <a href="/diplomat" class="btn btn-outline-warning w-100">View Factions</a>
+                {% if summary.modules.paragon_opportunities %}
+                {% for opp in summary.modules.paragon_opportunities[:3] %}
+                <div class="mb-3">
+                    <div class="d-flex justify-content-between small mb-1">
+                        <span>{{ opp.faction_name }}</span>
+                        <span class="text-warning">{{ opp.percent }}%</span>
+                    </div>
+                    <div class="progress" style="height: 10px;">
+                        <div class="progress-bar bg-warning" role="progressbar" style="width: {{ opp.percent }}%"></div>
+                    </div>
+                    <small class="text-muted">{{ opp.remaining }} rep to go</small>
+                </div>
+                {% endfor %}
+                <a href="/diplomat" class="btn btn-outline-warning w-100 mt-2">View All</a>
+                {% else %}
+                <div class="text-center py-4">
+                    <i class="fas fa-check-circle fa-3x text-muted mb-3"></i>
+                    <p class="text-muted">No Paragon opportunities nearby.</p>
+                    <a href="/diplomat" class="btn btn-outline-secondary w-100">Check Factions</a>
+                </div>
+                {% endif %}
             </div>
         </div>
     </div>

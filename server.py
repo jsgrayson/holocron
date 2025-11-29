@@ -23,9 +23,6 @@ def index():
     # Redirect to dashboard as the new home page
     return dashboard()
 
-@app.route('/dashboard')
-def dashboard():
-    return render_template('dashboard.html')
 
 @app.route('/api/stats')
 def api_stats():
@@ -270,11 +267,11 @@ def navigator():
                           urgent_count=len(urgent))
 
 # --- PATHFINDER MODULE ---
-from pathfinder_engine import MockPathfinder
+from pathfinder_engine import PathfinderEngine
 
 # Initialize Pathfinder engine once
-pathfinder_engine = MockPathfinder()
-pathfinder_engine.build_mock_graph()
+pathfinder_engine = PathfinderEngine(None)
+pathfinder_engine.load_mock_data()
 
 @app.route('/api/pathfinder/route')
 def pathfinder_route():
@@ -432,9 +429,6 @@ def utility():
                           summary=summary,
                           missing_mounts=missing_mounts)
 
-                          summary=summary,
-                          missing_mounts=missing_mounts)
-
 # --- GOBLIN BRAIN MODULE ---
 from goblin_engine import GoblinEngine, ItemType
 
@@ -481,7 +475,12 @@ from codex_engine import CodexEngine, Role
 
 # Initialize Codex engine once
 codex_engine = CodexEngine()
-codex_engine.load_mock_data()
+# Try to load real data, fallback to mock if needed (handled inside load_real_data)
+try:
+    codex_engine.load_real_data()
+except Exception as e:
+    print(f"Error loading real data: {e}. Falling back to mock.")
+    codex_engine.load_mock_data()
 
 @app.route('/api/codex/instance/<int:instance_id>')
 def codex_instance(instance_id):
@@ -499,15 +498,6 @@ def codex_encounter(encounter_id):
         return jsonify({"error": "Encounter not found"}), 404
     return jsonify(encounter)
 
-@app.route('/codex')
-def codex():
-    """Codex UI - Encounter Guide"""
-    # Default to Nerub-ar Palace
-    instance = codex_engine.get_instance(1273)
-    
-    return render_template('codex.html',
-                          instance=instance)
-                          instance=instance)
 
 # --- VAULT VISUALIZER ---
 from vault_engine import VaultEngine, VaultCategory
@@ -944,7 +934,7 @@ from diplomat_engine import DiplomatEngine
 
 # Initialize Diplomat engine once
 diplomat_engine = DiplomatEngine()
-diplomat_engine.load_mock_data()
+diplomat_engine.load_real_data()
 
 @app.route('/api/diplomat/opportunities')
 def diplomat_opportunities():
@@ -1184,5 +1174,52 @@ def mirror_sync():
 # Legacy dashboard removed in favor of Resilient Dashboard
 
 
+# --- TSM MODULE ---
+from tsm_engine import TSMEngine
+tsm_engine = TSMEngine()
+tsm_engine.load_data()
+
+# --- GOBLIN MODULE ---
+from goblin_engine import GoblinEngine
+goblin_engine = GoblinEngine(tsm_engine=tsm_engine)
+goblin_engine.load_mock_data()
+
+# --- WARDEN MODULE ---
+from warden_engine import WardenEngine
+warden_engine = WardenEngine()
+warden_engine.load_mock_data()
+
+@app.route('/api/warden')
+def warden_api():
+    """Warden API"""
+    return jsonify(warden_engine.get_account_summary())
+
+# --- BRIEFING MODULE ---
+from briefing_engine import BriefingEngine
+
+# Initialize Briefing engine once
+briefing_engine = BriefingEngine(
+    diplomat=diplomat_engine,
+    goblin=goblin_engine,
+    vault=vault_engine,
+    scout=scout_engine,
+    knowledge=knowledge_tracker,
+    warden=warden_engine
+)
+
+@app.route('/api/briefing')
+def briefing_api():
+    """Daily Briefing API"""
+    return jsonify(briefing_engine.generate_briefing())
+
+@app.route('/briefing')
+def briefing():
+    """Daily Briefing UI"""
+    data = briefing_engine.generate_briefing()
+    return render_template('briefing.html', briefing=data)
+
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5001)
+    # Start the Flask server
+    PORT = 5002
+    print(f"Starting Holocron Server on port {PORT}...")
+    app.run(host='0.0.0.0', port=PORT, debug=True)

@@ -68,30 +68,45 @@ class WowheadScraper:
             # For this implementation, we will try to find the "Bosses" list in the HTML
             # Often found in <table class="listview-mode-default"> or similar
             
+            # Regex to find the "bosses" listview
+            # Pattern looks for: new Listview({template: "npc", id: "bosses", data: [{"id":215657,"name":"Ulgrax the Devourer"...}]});
+            
+            # We look for the `data: [...]` part associated with `id: "bosses"`
+            # This is a bit complex regex, so we'll try to find the specific script block first
+            
             bosses = []
-            
-            # Generic approach: Find links that look like bosses
-            # This is tricky on Wowhead dynamic pages. 
-            # Alternative: Use the "Quick Facts" or "Related" tabs if accessible.
-            
-            # For reliability in this demo, if it's Nerub-ar Palace, we might want to be smarter.
-            # But let's try to find the `new Listview` data in the script tags
-            
             scripts = soup.find_all('script')
-            for script in scripts:
-                if script.string and 'new Listview' in script.string and 'id: "bosses"' in script.string:
-                    # Found the boss list data!
-                    # It's a JSON-like structure inside JS
-                    # We can try to extract names and IDs
-                    pass
             
-            # If generic scraping is too complex for a single file, we'll implement a 
-            # targeted scraper for the requested zone (Nerub-ar Palace)
+            for script in scripts:
+                if script.string and 'id: "bosses"' in script.string:
+                    # Found the script! Now extract the data array
+                    # We'll look for `data: [...]`
+                    match = re.search(r'data: \[(.*?)\]', script.string)
+                    if match:
+                        data_str = match.group(1)
+                        # The data string is a list of objects like {"id":123,"name":"Foo"},...
+                        # We can try to parse it with regex finding all id/name pairs
+                        
+                        # Find all {"id":123,"name":"Name"} patterns
+                        # Note: Wowhead keys might not be quoted, so we use a loose regex
+                        # id: 215657
+                        # name: "Ulgrax the Devourer"
+                        
+                        # Let's just find all objects that look like bosses
+                        # We'll iterate through the string splitting by "},"
+                        
+                        entries = re.findall(r'\{"id":(\d+),"name":"([^"]+)"', data_str)
+                        for npc_id, npc_name in entries:
+                            # Decode unicode escapes if any (Wowhead uses them)
+                            clean_name = bytes(npc_name, 'utf-8').decode('unicode_escape')
+                            bosses.append({"id": int(npc_id), "name": clean_name})
+                            
+            print(f"Scraped {len(bosses)} bosses from zone page.")
             
             return {
                 "id": zone_id,
                 "name": zone_name,
-                "bosses": [] # To be populated
+                "bosses": bosses
             }
             
         except Exception as e:
@@ -143,11 +158,12 @@ class WowheadScraper:
 
     def get_nerubar_palace_data(self):
         """
-        Hardcoded scraper specifically for Nerub-ar Palace to ensure success
-        while generic scraper is being refined.
+        Returns hardcoded data for Nerub-ar Palace with all 8 bosses.
+        Uses real IDs where known, and placeholders where not.
         """
-        # We can fetch the pages to verify they exist, but we'll map the IDs manually
-        # to ensure the Codex gets populated correctly.
+        # Known IDs:
+        # Ulgrax: 215657
+        # Queen Ansurek: 206000
         
         raid_data = {
             "id": 1273,
@@ -155,35 +171,45 @@ class WowheadScraper:
             "encounters": []
         }
         
-        # Boss IDs for Nerub-ar Palace
         bosses = [
             {"id": 215657, "name": "Ulgrax the Devourer"},
-            {"id": 217201, "name": "The Bloodbound Horror"},
-            {"id": 218370, "name": "Sikran"},
-            {"id": 216648, "name": "Rasha'nan"},
-            {"id": 216649, "name": "Broodtwister Ovi'nax"},
-            {"id": 217202, "name": "Nexus-Princess Ky'veza"},
-            {"id": 217203, "name": "Silken Court"},
-            {"id": 218371, "name": "Queen Ansurek"}
+            {"id": 999002, "name": "The Bloodbound Horror"}, # Placeholder ID
+            {"id": 999003, "name": "Sikran, Captain of the Sureki"}, # Placeholder ID
+            {"id": 999004, "name": "Rasha'nan"}, # Placeholder ID
+            {"id": 999005, "name": "Broodtwister Ovi'nax"}, # Placeholder ID
+            {"id": 999006, "name": "Nexus-Princess Ky'veza"}, # Placeholder ID
+            {"id": 999007, "name": "The Silken Court"}, # Placeholder ID
+            {"id": 206000, "name": "Queen Ansurek"}
         ]
         
         for boss_info in bosses:
-            # We will actually fetch the page to get the real name/title
-            # to prove scraping works
-            scraped = self.scrape_boss(boss_info["id"])
-            if scraped:
-                # Add some real abilities (simulated scraping for now as parsing JS is heavy)
-                # In a full implementation, we'd regex the `new Listview` JS
-                real_abilities = self._mock_scrape_abilities(boss_info["id"])
-                
-                raid_data["encounters"].append({
-                    "id": boss_info["id"],
-                    "name": scraped.name, # Use real name from page
-                    "description": f"Encounter in Nerub-ar Palace. (Scraped from Wowhead)",
-                    "abilities": real_abilities
-                })
-        
+            # Try to scrape real abilities if ID is real, otherwise mock
+            abilities = []
+            if boss_info["id"] < 900000: # Real ID
+                scraped = self.scrape_boss(boss_info["id"])
+                if scraped:
+                    # In a real app we'd parse abilities here
+                    abilities = self._mock_scrape_abilities(boss_info["id"])
+            
+            raid_data["encounters"].append({
+                "id": boss_info["id"],
+                "name": boss_info["name"],
+                "description": f"Encounter in Nerub-ar Palace.",
+                "abilities": abilities
+            })
+            
         return raid_data
+
+    def _get_fallback_data(self):
+        """Fallback if dynamic scraping fails"""
+        return {
+            "id": 1273,
+            "name": "Nerub-ar Palace",
+            "encounters": [
+                {"id": 215657, "name": "Ulgrax the Devourer", "description": "Fallback Data", "abilities": []},
+                {"id": 206000, "name": "Queen Ansurek", "description": "Fallback Data", "abilities": []}
+            ]
+        }
 
     def _mock_scrape_abilities(self, boss_id: int) -> List[Dict]:
         """

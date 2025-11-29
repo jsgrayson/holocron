@@ -26,22 +26,58 @@ class ItemPrice:
     sale_rate: float   # 0.0 to 1.0 (velocity)
     
 @dataclass
+class Item:
+    id: int
+    name: str
+    item_type: ItemType
+    market_value: int
+    sale_rate: float
+
+class Profession(Enum):
+    ALCHEMY = "Alchemy"
+    BLACKSMITHING = "Blacksmithing"
+    ENCHANTING = "Enchanting"
+    ENGINEERING = "Engineering"
+    INSCRIPTION = "Inscription"
+    JEWELCRAFTING = "Jewelcrafting"
+    LEATHERWORKING = "Leatherworking"
+    TAILORING = "Tailoring"
+    MINING = "Mining"
+    HERBALISM = "Herbalism"
+    SKINNING = "Skinning"
+
+@dataclass
 class Recipe:
     recipe_id: int
     name: str
-    output_item_id: int
-    output_quantity: int
-    materials: Dict[int, int]  # {item_id: quantity}
-    craft_time_seconds: int
+    profession: Profession
+    reagents: Dict[int, int]  # {item_id: quantity}
+    result_item_id: int
+    output_quantity: int = 1
+
+class Profession(Enum):
+    ALCHEMY = "Alchemy"
+    BLACKSMITHING = "Blacksmithing"
+    ENCHANTING = "Enchanting"
+    ENGINEERING = "Engineering"
+    INSCRIPTION = "Inscription"
+    JEWELCRAFTING = "Jewelcrafting"
+    LEATHERWORKING = "Leatherworking"
+    TAILORING = "Tailoring"
+    MINING = "Mining"
+    HERBALISM = "Herbalism"
+    SKINNING = "Skinning"
 
 class GoblinEngine:
     """
     Economic intelligence engine for market analysis and crafting optimization
     """
     
-    def __init__(self):
+    def __init__(self, tsm_engine=None):
+        self.tsm_engine = tsm_engine
         self.prices = {}  # {item_id: ItemPrice}
         self.recipes = []
+        self.items = []
         
     def load_mock_data(self):
         """Load mock market and recipe data"""
@@ -60,25 +96,43 @@ class GoblinEngine:
         self.prices[2004] = ItemPrice(2004, "Khaz Algar Flask", ItemType.CONSUMABLE, 400, 380, 420, 0.65)
         
         # 2. Define Recipes
-        self.recipes = [
+        self.recipes = []
             # Potion: 2 Herbs (25g ea) -> 1 Potion (80g)
-            # Cost: 50g, Value: 80g, Profit: 26g (after 5% cut)
-            Recipe(5001, "Algari Healing Potion", 2001, 1, {1002: 2}, 2),
-            
-            # Helm: 20 Ore (45g ea) + 2 Crystal (200g ea) -> 1 Helm (2500g)
-            # Cost: 900 + 400 = 1300g, Value: 2500g, Profit: 1075g
-            Recipe(5002, "Draconium Plate Helm", 2002, 1, {1001: 20, 1004: 2}, 10),
-            
-            # Enchant: 4 Order (150g ea) + 2 Crystal (200g ea) -> 1 Enchant (1200g)
-            # Cost: 600 + 400 = 1000g, Value: 1200g, Profit: 140g
-            Recipe(5003, "Enchant Weapon - Sophic Devotion", 2003, 1, {1003: 4, 1004: 2}, 5),
-            
-            # Flask: 10 Herbs (25g ea) + 1 Order (150g ea) -> 1 Flask (400g)
-            # Cost: 250 + 150 = 400g, Value: 400g, Profit: -20g (Loss!)
-            Recipe(5004, "Khaz Algar Flask", 2004, 1, {1002: 10, 1003: 1}, 3),
-        ]
+        """Load mock recipe and item data"""
+        # But we don't need to define prices here if we use TSM, 
+        # though for now we'll keep them as fallback or base cost.
         
-        print(f"✓ Loaded {len(self.prices)} items, {len(self.recipes)} recipes")
+        # 1. Draconium Ore (Material)
+        draconium = Item(198765, "Draconium Ore", ItemType.MATERIAL, 45, 0.95)
+        
+        # 2. Khaz'gorite Ore (Material)
+        khazgorite = Item(198766, "Khaz'gorite Ore", ItemType.MATERIAL, 120, 0.80)
+        
+        # 3. Resonant Crystal (Material)
+        crystal = Item(200111, "Resonant Crystal", ItemType.MATERIAL, 200, 0.50)
+        
+        # 4. Hochenblume (Material)
+        hochenblume = Item(194820, "Hochenblume", ItemType.MATERIAL, 15, 0.90)
+        
+        self.items = [draconium, khazgorite, crystal, hochenblume]
+        
+        # Recipes
+        # 1. Draconium Ingot (Smelting)
+        # Requires: 2 Draconium Ore
+        ingot_recipe = Recipe(
+            382900, "Draconium Ingot", Profession.MINING,
+            {198765: 2}, 382901, 1
+        )
+        
+        # 2. Elemental Potion of Ultimate Power (Alchemy)
+        # Requires: 2 Hochenblume, 1 Crystal
+        potion_recipe = Recipe(
+            370607, "Elemental Potion of Ultimate Power", Profession.ALCHEMY,
+            {194820: 2, 200111: 1}, 191304
+        )
+        
+        self.recipes = [ingot_recipe, potion_recipe]
+        print(f"✓ Loaded {len(self.items)} items, {len(self.recipes)} recipes")
         
     def calculate_crafting_cost(self, recipe: Recipe) -> int:
         """Calculate total material cost for a recipe"""
@@ -93,34 +147,61 @@ class GoblinEngine:
         opportunities = []
         
         for recipe in self.recipes:
-            output_item = self.prices.get(recipe.output_item_id)
-            if not output_item:
-                continue
+            # Calculate Crafting Cost
+            crafting_cost = 0
+            for mat_id, qty in recipe.reagents.items():
+                # Use TSM price if available, else fallback to item.market_value
+                mat_price = 0
+                if self.tsm_engine:
+                    mat_price = self.tsm_engine.get_market_value(mat_id)
                 
-            crafting_cost = self.calculate_crafting_cost(recipe)
-            market_value = output_item.min_buyout
+                if mat_price == 0:
+                    # Fallback to internal item list
+                    mat_item = next((i for i in self.items if i.id == mat_id), None)
+                    if mat_item:
+                        mat_price = mat_item.market_value
+                
+                crafting_cost += mat_price * qty
             
-            # Calculate profit (Market Value * 0.95 for AH cut - Cost)
-            ah_cut = 0.05
-            net_value = market_value * (1 - ah_cut)
-            profit = net_value - crafting_cost
-            profit_margin = (profit / crafting_cost) * 100 if crafting_cost > 0 else 0
+            # Calculate Market Value of Result
+            result_price = 0
+            if self.tsm_engine:
+                result_price = self.tsm_engine.get_market_value(recipe.result_item_id)
+            
+            # Fallback for result price (mock)
+            if result_price == 0:
+                 if recipe.name == "Draconium Ingot": result_price = 100
+                 elif recipe.name == "Elemental Potion of Ultimate Power": result_price = 500
+            
+            profit = result_price - crafting_cost
+            margin = (profit / crafting_cost) * 100 if crafting_cost > 0 else 0
             
             # Score = Profit * Sale Rate (Velocity)
             # High profit items that never sell get lower priority
-            score = profit * output_item.sale_rate
+            # For now, use a mock sale rate for the result item
+            # In a real scenario, TSM would provide this for the result_item_id
+            mock_sale_rate = 0.75 # Placeholder
+            score = profit * mock_sale_rate
             
+            # Find the output item for its type and name
+            output_item_name = "Unknown"
+            output_item_type = "Unknown"
+            output_item_obj = next((i for i in self.items if i.id == recipe.result_item_id), None)
+            if output_item_obj:
+                output_item_name = output_item_obj.name
+                output_item_type = output_item_obj.item_type.value
+
             opportunities.append({
                 "recipe_name": recipe.name,
-                "output_item": output_item.name,
-                "type": output_item.item_type.value,
-                "crafting_cost": crafting_cost,
-                "market_value": market_value,
+                "output_item": output_item_name,
+                "type": output_item_type,
+                "crafting_cost": int(crafting_cost),
+                "market_value": int(result_price),
                 "profit": int(profit),
-                "profit_margin": int(profit_margin),
-                "sale_rate": output_item.sale_rate,
+                "profit_margin": int(margin),
+                "sale_rate": mock_sale_rate,
                 "score": int(score),
-                "recommendation": self._get_recommendation(profit, output_item.sale_rate)
+                "recommendation": self._get_recommendation(profit, mock_sale_rate)
             })
             
         # Sort by score (best opportunities first)
@@ -131,6 +212,26 @@ class GoblinEngine:
             "timestamp": "Now",
             "total_potential_profit": sum(o["profit"] for o in opportunities if o["profit"] > 0)
         }
+        
+    def get_sniper_list(self) -> List[Dict]:
+        """
+        Identify underpriced items (Sniper)
+        For mock data, we'll return a few fixed examples.
+        """
+        return [
+            {
+                "item": "Draconium Ore",
+                "listed_price": 15,
+                "market_value": 45,
+                "potential_profit": 30
+            },
+            {
+                "item": "Resonant Crystal",
+                "listed_price": 150,
+                "market_value": 200,
+                "potential_profit": 50
+            }
+        ]
     
     def _get_recommendation(self, profit: float, sale_rate: float) -> str:
         """Generate recommendation string"""

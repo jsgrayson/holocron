@@ -23,13 +23,136 @@ class Collectible:
     difficulty: str  # "Easy", "Medium", "Hard", "Very Hard"
     expansion: str
     
+from utils.lua_parser import LuaParser
+import os
+import glob
+
 class UtilityTracker:
     """Tracks mount, toy, and spell collections"""
     
     def __init__(self):
         self.all_collectibles = []
         self.owned = set()
+        self.lua_parser = LuaParser()
         
+    def load_real_data(self):
+        """Load real collection data from DataStore_Mounts/Pets"""
+        print("Loading real collection data...")
+        
+        # 1. Find SavedVariables path (reuse logic or config)
+        possible_paths = [
+            os.environ.get('WOW_SAVED_VARIABLES_PATH'),
+            os.path.expanduser("~/Documents/holocron/SavedVariables"),
+            "/Applications/World of Warcraft/_retail_/WTF/Account/*/SavedVariables",
+            "C:/Program Files (x86)/World of Warcraft/_retail_/WTF/Account/*/SavedVariables"
+        ]
+        
+        sv_path = None
+        for path_pattern in possible_paths:
+            if not path_pattern: continue
+            matches = glob.glob(os.path.join(path_pattern, "DataStore_Mounts.lua"))
+            if matches:
+                sv_path = os.path.dirname(matches[0])
+                break
+                
+        if not sv_path:
+            print("Could not find SavedVariables. Falling back to mock data.")
+            self.load_mock_data()
+            return
+
+        # 2. Load Mounts
+        self._load_mounts(sv_path)
+        
+        # 3. Load Pets (if available)
+        self._load_pets(sv_path)
+        
+        print(f"✓ Loaded {len(self.all_collectibles)} collectibles, {len(self.owned)} owned")
+        
+    def _load_mounts(self, sv_path):
+        mount_file = os.path.join(sv_path, "DataStore_Mounts.lua")
+        data = self.lua_parser.parse_file(mount_file, "DataStore_MountsDB")
+        
+        if not data: return
+        
+        # Structure: global.Characters[GUID].Mounts (list of IDs)
+        # Or global.Account.Mounts? DataStore usually stores mounts account-wide now.
+        # Let's check global.Account or iterate characters.
+        
+        # DataStore_Mounts usually has a global table for account-wide mounts
+        # But structure varies. Let's assume we aggregate all unique IDs found.
+        
+        try:
+            db_global = data.get("global", {})
+            # Check for Account-wide mounts
+            # Often in "Global" or "Account" key, or we just union all characters
+            
+            # For simplicity, let's look at the first character or iterate all
+            characters = db_global.get("Characters", {})
+            
+            for char_key, char_data in characters.items():
+                mounts = char_data.get("Mounts", [])
+                # mounts might be a list of IDs or a bitmask/string
+                # If it's a list of ints:
+                if isinstance(mounts, list):
+                    for m_id in mounts:
+                        if isinstance(m_id, int):
+                            self.owned.add(m_id)
+                            # Add to all_collectibles if not present (we need metadata)
+                            # Since we don't have a mount DB, we'll create generic entries for owned ones
+                            # and keep the mock ones as "unowned" examples if they aren't in the list
+                            self._ensure_collectible(m_id, CollectionType.MOUNT)
+                            
+                elif isinstance(mounts, dict):
+                    for m_id in mounts:
+                        self.owned.add(int(m_id))
+                        self._ensure_collectible(int(m_id), CollectionType.MOUNT)
+                        
+        except Exception as e:
+            print(f"Error loading mounts: {e}")
+
+    def _load_pets(self, sv_path):
+        pet_file = os.path.join(sv_path, "DataStore_Pets.lua")
+        if not os.path.exists(pet_file): return
+        
+        data = self.lua_parser.parse_file(pet_file, "DataStore_PetsDB")
+        if not data: return
+        
+        try:
+            db_global = data.get("global", {})
+            characters = db_global.get("Characters", {})
+            
+            for char_key, char_data in characters.items():
+                pets = char_data.get("Pets", [])
+                # Pets are usually stored as "SpeciesID|Level|..." strings or similar
+                # Or just a list of IDs
+                
+                if isinstance(pets, list):
+                    for p in pets:
+                        # If string "123|1|..."
+                        if isinstance(p, str) and "|" in p:
+                            try:
+                                species_id = int(p.split("|")[0])
+                                self.owned.add(species_id)
+                                self._ensure_collectible(species_id, CollectionType.PET)
+                            except: pass
+                        elif isinstance(p, int):
+                            self.owned.add(p)
+                            self._ensure_collectible(p, CollectionType.PET)
+                            
+        except Exception as e:
+            print(f"Error loading pets: {e}")
+
+    def _ensure_collectible(self, item_id: int, c_type: CollectionType):
+        # Check if already exists
+        for c in self.all_collectibles:
+            if c.item_id == item_id and c.collection_type == c_type:
+                return
+        
+        # Create generic entry since we don't have a name DB
+        self.all_collectibles.append(Collectible(
+            item_id, f"{c_type.value} #{item_id}", c_type, "Unknown", "Medium", "Unknown"
+        ))
+
     def load_mock_data(self):
         """Load mock collection data"""
         

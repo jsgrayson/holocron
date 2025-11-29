@@ -138,6 +138,18 @@ class DashboardEngine:
             "next_alert": alerts[0]['event'] if alerts else "None"
         }
         
+        # 10. Diplomat Paragon Opportunities
+        try:
+            diplomat_data = self.diplomat.get_opportunities()
+            # Filter for high priority (>80%)
+            paragon_opportunities = [
+                opp for opp in diplomat_data 
+                if opp.get('percent', 0) >= 80
+            ]
+        except Exception as e:
+            print(f"Error fetching Diplomat data for paragon opportunities: {e}")
+            paragon_opportunities = []
+
         return {
             "timestamp": datetime.datetime.now().strftime("%H:%M"),
             "modules": {
@@ -149,7 +161,8 @@ class DashboardEngine:
                 "goblin": goblin_status,
                 "codex": codex_status,
                 "vault": vault_status,
-                "scout": scout_status
+                "scout": scout_status,
+                "paragon_opportunities": paragon_opportunities
             }
         }
 

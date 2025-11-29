@@ -64,6 +64,10 @@ class WorldQuest:
         else:
             return "Poor"
 
+from utils.lua_parser import LuaParser
+import os
+import glob
+
 class DiplomatEngine:
     """
     Reputation optimizer that identifies Paragon opportunities
@@ -74,7 +78,119 @@ class DiplomatEngine:
         self.factions = {}
         self.reputation_status = {}
         self.active_wqs = []
+        self.lua_parser = LuaParser()
         
+    def load_real_data(self):
+        """
+        Load real reputation data from DataStore_Reputations.lua
+        """
+        print("Loading real reputation data...")
+        
+        # 1. Find the SavedVariables file
+        # Check common locations or environment variable
+        possible_paths = [
+            os.environ.get('WOW_SAVED_VARIABLES_PATH'),
+            os.path.expanduser("~/Documents/holocron/SavedVariables"), # Local override
+            "/Applications/World of Warcraft/_retail_/WTF/Account/*/SavedVariables", # Mac Standard
+            "C:/Program Files (x86)/World of Warcraft/_retail_/WTF/Account/*/SavedVariables" # Windows Standard
+        ]
+        
+        file_path = None
+        for path_pattern in possible_paths:
+            if not path_pattern: continue
+            
+            # Use glob to handle wildcards (Account name)
+            matches = glob.glob(os.path.join(path_pattern, "DataStore_Reputations.lua"))
+            if matches:
+                file_path = matches[0] # Use first match
+                break
+                
+        if not file_path:
+            print("Could not find DataStore_Reputations.lua. Falling back to mock data.")
+            self.load_mock_data()
+            return
+
+        print(f"Parsing {file_path}...")
+        
+        # 2. Parse the Lua file
+        data = self.lua_parser.parse_file(file_path, "DataStore_ReputationsDB")
+        
+        if not data:
+            print("Failed to parse reputation data. Falling back to mock data.")
+            self.load_mock_data()
+            return
+            
+        # 3. Process the data
+        # DataStore structure: DataStore_ReputationsDB.global.Characters[GUID].Factions[FactionID]
+        # We need to aggregate or pick the current character. 
+        # For MVP, we'll pick the character with the most recent update or just the first one.
+        
+        # Simplified: Just iterate all characters and find the max rep for each faction (account-wide view)
+        
+        try:
+            db_global = data.get("global", {})
+            characters = db_global.get("Characters", {})
+            
+            if not characters:
+                # Maybe structure is different (profile based?)
+                # Try profile keys if global is empty
+                pass
+                
+            # Reset data
+            self.factions = {}
+            self.reputation_status = {}
+            
+            count = 0
+            for char_key, char_data in characters.items():
+                factions_data = char_data.get("Factions", {})
+                
+                for faction_id_str, rep_data in factions_data.items():
+                    # rep_data might be a list or dict depending on DataStore version
+                    # Usually: { name, earned, total, standing, ... }
+                    
+                    # Note: LuaParser might return keys as strings or ints depending on format
+                    faction_id = int(faction_id_str)
+                    
+                    # Extract data (DataStore format varies, assuming standard fields)
+                    # If it's a list: [name, earned, rate, ...]
+                    # If it's a dict: {name=..., earned=...}
+                    
+                    name = "Unknown Faction"
+                    current = 0
+                    max_rep = 42000 # Exalted/Paragon
+                    
+                    if isinstance(rep_data, dict):
+                        name = rep_data.get("name", name)
+                        current = rep_data.get("earned", 0)
+                        # max might not be stored, assume standard or look up
+                    elif isinstance(rep_data, list):
+                        # Heuristic mapping if list
+                        if len(rep_data) > 0: name = rep_data[0]
+                        if len(rep_data) > 1: current = rep_data[1]
+                        
+                    # Update our DB (Account-wide max)
+                    if faction_id not in self.reputation_status or current > self.reputation_status[faction_id].current_value:
+                        self.factions[faction_id] = Faction(faction_id, name, "Unknown") # Expansion unknown from DataStore
+                        self.reputation_status[faction_id] = ReputationStatus(faction_id, current)
+                        count += 1
+                        
+            print(f"✓ Loaded {len(self.factions)} factions from real data")
+            
+            # Load mock WQs since we don't have a WQ scraper yet
+            self._load_mock_wqs()
+            
+        except Exception as e:
+            print(f"Error processing reputation data: {e}")
+            self.load_mock_data()
+
+    def _load_mock_wqs(self):
+        """Load mock WQs only (helper for real data mode)"""
+        now = datetime.now()
+        self.active_wqs = [
+            WorldQuest(70001, "Protect the Core", 2248, "Isle of Dorn", 2600, 250, 30, 150, now + timedelta(hours=6)),
+            WorldQuest(70004, "Defend the Lighthouse", 2215, "Hallowfall", 2602, 350, 90, 175, now + timedelta(hours=5)),
+        ]
+
     def load_mock_data(self):
         """Load mock data for testing (no database needed)"""
         
