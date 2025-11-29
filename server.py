@@ -205,55 +205,69 @@ def generate_jobs():
         print(f"Job generation error: {e}")
         return jsonify({"error": str(e)}), 500
 
+# --- NAVIGATOR MODULE ---
+from navigator_engine import NavigatorEngine
+
+# Initialize Navigator engine once
+navigator_engine = NavigatorEngine()
+navigator_engine.load_mock_data()
+
+@app.route('/api/navigator/activities')
+def navigator_activities():
+    """
+    Get prioritized activities with scores
+    Query params:
+        include_owned (bool): Include already-collected items
+        min_available (int): Minimum available characters
+    """
+    include_owned = request.args.get('include_owned', 'false').lower() == 'true'
+    min_available = request.args.get('min_available', 1, type=int)
+    
+    activities = navigator_engine.get_prioritized_activities(
+        include_owned=include_owned,
+        min_available=min_available
+    )
+    
+    stats = navigator_engine.get_statistics()
+    
+    return jsonify({
+        "activities": activities,
+        "statistics": stats,
+        "urgent_count": len(navigator_engine.get_urgent_activities())
+    })
+
+@app.route('/api/navigator/urgent')
+def navigator_urgent():
+    """Get top priority activities (score >= 80)"""
+    urgent = navigator_engine.get_urgent_activities(limit=10)
+    return jsonify({"urgent_activities": urgent})
+
 @app.route('/navigator')
 def navigator():
+    """Navigator UI page"""
+    # Get prioritized activities
+    activities_data = navigator_engine.get_prioritized_activities(min_available=1)
+    stats = navigator_engine.get_statistics()
+    urgent = navigator_engine.get_urgent_activities()
+    
+    # Format for template (keep compatible with existing HTML)
     activities = []
-    try:
-        conn = get_db_connection()
-        cur = conn.cursor()
-        
-        # Logic:
-        # 1. Get all notable drops.
-        # 2. For each drop, count how many characters are NOT locked to that instance.
-        # (Mocking the count for MVP as we don't have full character data populated)
-        
-        sql = """
-            SELECT i.name, d.name, d.type, i.expansion, i.type
-            FROM holocron.instance_drops d
-            JOIN holocron.instance_locations i ON d.instance_id = i.instance_id
-        """
-        cur.execute(sql)
-        rows = cur.fetchall()
-        
-        for row in rows:
-            activities.append({
-                "instance_name": row[0],
-                "drop_name": row[1],
-                "drop_type": row[2],
-                "expansion": row[3],
-                "type": row[4], # Raid, Dungeon, or Holiday
-                "available_count": 8 # Mocked: "Available on 8 alts"
-            })
-
-        cur.close()
-        conn.close()
-        
-        # Integrate Diplomat Recommendations (Mock)
-        # In a real app, we'd call a shared function.
+    for act in activities_data[:20]:  # Top 20
         activities.append({
-            "instance_name": "Isle of Dorn",
-            "drop_name": "Paragon Cache (Council of Dornogal)",
-            "type": "Reputation",
-            "expansion": "The War Within",
-            "available_count": "1 (MainMage)"
+            "instance_name": act["instance"],
+            "drop_name": act["drop"],
+            "drop_type": act["type"],
+            "expansion": act["expansion"],
+            "type": act['instance_type'],
+            "available_count": act["available_chars"],
+            "score": act["score"],
+            "priority": act["priority"]
         })
-        
-    except Exception as e:
-        print(f"Navigator error: {e}")
-
-    return render_template('navigator.html', activities=activities)
-
-    return render_template('navigator.html', activities=activities)
+    
+    return render_template('navigator.html', 
+                          activities=activities,
+                          statistics=stats,
+                          urgent_count=len(urgent))
 
 # --- PATHFINDER MODULE ---
 from pathfinder_engine import MockPathfinder
