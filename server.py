@@ -477,6 +477,36 @@ def goblin():
                           sniper=sniper)
 
 # --- CODEX MODULE ---
+from codex_engine import CodexEngine, Role
+
+# Initialize Codex engine once
+codex_engine = CodexEngine()
+codex_engine.load_mock_data()
+
+@app.route('/api/codex/instance/<int:instance_id>')
+def codex_instance(instance_id):
+    """Get instance details"""
+    instance = codex_engine.get_instance(instance_id)
+    if not instance:
+        return jsonify({"error": "Instance not found"}), 404
+    return jsonify(instance)
+
+@app.route('/api/codex/encounter/<int:encounter_id>')
+def codex_encounter(encounter_id):
+    """Get encounter details"""
+    encounter = codex_engine.get_encounter(encounter_id)
+    if not encounter:
+        return jsonify({"error": "Encounter not found"}), 404
+    return jsonify(encounter)
+
+@app.route('/codex')
+def codex():
+    """Codex UI - Encounter Guide"""
+    # Default to Nerub-ar Palace
+    instance = codex_engine.get_instance(1273)
+    
+    return render_template('codex.html',
+                          instance=instance)
 
 def fetch_campaigns():
     """

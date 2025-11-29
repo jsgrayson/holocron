@@ -30,7 +30,12 @@ response = requests.get(url, params={
     'access_token': token
 })
 
-instances = response.json()
+try:
+    instances = response.json()
+except json.JSONDecodeError:
+    print(f"Error decoding JSON. Status Code: {response.status_code}")
+    print(f"Response Text: {response.text}")
+    exit(1)
 
 print("\n" + "="*80)
 print("ALL AVAILABLE JOURNAL INSTANCES")
