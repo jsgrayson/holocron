@@ -23,6 +23,83 @@ def index():
     # Redirect to dashboard as the new home page
     return dashboard()
 
+@app.route('/dashboard')
+def dashboard():
+    return render_template('dashboard.html')
+
+@app.route('/api/stats')
+def api_stats():
+    """Returns stat weights from DB or JSON fallback."""
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT spec, stat_string FROM skillweaver.stat_weights")
+        rows = cur.fetchall()
+        data = [{"spec": r[0], "stat_string": r[1]} for r in rows]
+        cur.close()
+        conn.close()
+        return jsonify({"source": "db", "data": data})
+    except Exception as e:
+        print(f"DB Error (Stats): {e}")
+        # Fallback
+        try:
+            with open("scraped_stats.json", "r") as f:
+                return jsonify({"source": "json", "data": json.load(f)})
+        except FileNotFoundError:
+            return jsonify({"source": "none", "data": []})
+
+@app.route('/api/talents')
+def api_talents():
+    """Returns talent strings from DB or JSON fallback."""
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT spec, build_name, talent_string FROM skillweaver.talent_builds")
+        rows = cur.fetchall()
+        data = [{"spec": r[0], "build_name": r[1], "talent_string": r[2]} for r in rows]
+        cur.close()
+        conn.close()
+        return jsonify({"source": "db", "data": data})
+    except Exception as e:
+        print(f"DB Error (Talents): {e}")
+        # Fallback
+        try:
+            with open("scraped_talents.json", "r") as f:
+                return jsonify({"source": "json", "data": json.load(f)})
+        except FileNotFoundError:
+            return jsonify({"source": "none", "data": []})
+
+@app.route('/api/battles')
+def api_battles():
+    """Returns recorded battles from DB or JSON fallback."""
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM petweaver.battles LIMIT 50") # Placeholder schema
+        rows = cur.fetchall()
+        # Mock DB response for now as schema might vary
+        data = [] 
+        cur.close()
+        conn.close()
+        return jsonify({"source": "db", "data": data})
+    except Exception as e:
+        print(f"DB Error (Battles): {e}")
+        # Fallback
+        try:
+            with open("recorded_battles.json", "r") as f:
+                # Read line by line if it's JSONL, or load if JSON array
+                # The recorder appends lines, so it's likely JSONL-ish or just appended dicts
+                # Let's assume valid JSON array or fix it
+                # Actually recorder.py appends `json.dumps(data) + "\n"`.
+                # So we need to parse lines.
+                data = []
+                for line in f:
+                    if line.strip():
+                        data.append(json.loads(line))
+                return jsonify({"source": "json", "data": data})
+        except FileNotFoundError:
+            return jsonify({"source": "none", "data": []})
+
 @app.route('/search')
 def search():
     query = request.args.get('q')
@@ -725,103 +802,137 @@ def health_check():
     except Exception as e:
         return jsonify({"status": "unhealthy", "database": str(e)}), 500
 
+# --- MIRROR MODULE ---
+
+@app.route('/api/mirror/register', methods=['POST'])
+def mirror_register():
+    """
+    Registers a device by hostname and returns its type.
+    """
+    try:
+        data = request.get_json()
+        hostname = data.get('hostname')
+        if not hostname:
+            return jsonify({"error": "Missing hostname"}), 400
+
+        conn = get_db_connection()
+        cur = conn.cursor()
+        
+        # Check if exists
+        cur.execute("SELECT device_type FROM mirror.trusted_devices WHERE hostname = %s", (hostname,))
+        row = cur.fetchone()
+        
+        if row:
+            device_type = row[0]
+            # Update last_seen
+            cur.execute("UPDATE mirror.trusted_devices SET last_seen = CURRENT_TIMESTAMP WHERE hostname = %s", (hostname,))
+        else:
+            # Register new (Default to DESKTOP)
+            device_type = 'DESKTOP'
+            cur.execute("INSERT INTO mirror.trusted_devices (hostname, device_type) VALUES (%s, %s)", (hostname, device_type))
+        
+        conn.commit()
+        cur.close()
+        conn.close()
+        
+        return jsonify({"hostname": hostname, "device_type": device_type})
+    except Exception as e:
+        print(f"Mirror register error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/mirror/upload', methods=['POST'])
+def mirror_upload():
+    """
+    Uploads a config file (macros/bindings).
+    """
+    try:
+        data = request.get_json()
+        hostname = data.get('hostname')
+        file_type = data.get('file_type') # MACROS, BINDINGS
+        content = data.get('content')
+        char_guid = data.get('char_guid', 'GLOBAL')
+        
+        if not all([hostname, file_type, content]):
+            return jsonify({"error": "Missing fields"}), 400
+
+        conn = get_db_connection()
+        cur = conn.cursor()
+        
+        # Get device type
+        cur.execute("SELECT device_type FROM mirror.trusted_devices WHERE hostname = %s", (hostname,))
+        row = cur.fetchone()
+        if not row:
+            return jsonify({"error": "Device not registered"}), 403
+        device_type = row[0]
+        
+        # Upsert Profile
+        sql = """
+            INSERT INTO mirror.config_profiles (character_guid, device_type, file_type, content, updated_at)
+            VALUES (%s, %s, %s, %s, CURRENT_TIMESTAMP)
+            ON CONFLICT (character_guid, device_type, file_type) 
+            DO UPDATE SET content = EXCLUDED.content, updated_at = CURRENT_TIMESTAMP
+        """
+        cur.execute(sql, (char_guid, device_type, file_type, content))
+        
+        conn.commit()
+        cur.close()
+        conn.close()
+        
+        return jsonify({"status": "success", "message": "Config uploaded"})
+    except Exception as e:
+        print(f"Mirror upload error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/mirror/sync', methods=['GET'])
+def mirror_sync():
+    """
+    Downloads the latest config for a device.
+    """
+    try:
+        hostname = request.args.get('hostname')
+        file_type = request.args.get('file_type')
+        char_guid = request.args.get('char_guid', 'GLOBAL')
+        
+        if not hostname or not file_type:
+            return jsonify({"error": "Missing params"}), 400
+            
+        conn = get_db_connection()
+        cur = conn.cursor()
+        
+        # Get device type
+        cur.execute("SELECT device_type FROM mirror.trusted_devices WHERE hostname = %s", (hostname,))
+        row = cur.fetchone()
+        if not row:
+            return jsonify({"error": "Device not registered"}), 403
+        device_type = row[0]
+        
+        # Fetch Config
+        cur.execute("""
+            SELECT content, updated_at FROM mirror.config_profiles 
+            WHERE character_guid = %s AND device_type = %s AND file_type = %s
+        """, (char_guid, device_type, file_type))
+        
+        row = cur.fetchone()
+        cur.close()
+        conn.close()
+        
+        if row:
+            return jsonify({
+                "found": True,
+                "content": row[0],
+                "updated_at": row[1]
+            })
+        else:
+            return jsonify({"found": False})
+            
+    except Exception as e:
+        print(f"Mirror sync error: {e}")
+        return jsonify({"error": str(e)}), 500
+
 # --- UNIFIED DASHBOARD ---
 
-@app.route('/dashboard')
-def dashboard():
-    """Unified command center aggregating all module data"""
-    pet_stats = {"total": 0, "unique": 0, "strategies_ready": 0, "duplicates": 0, "missing": 0}
-    campaign_stats = {"avg_progress": 0, "campaigns_complete": 0, "total_campaigns": 0}
-    liquidation_stats = {"item_count": 0, "total_value": 0}
-    diplomat_stats = {"close_to_paragon": 0}
-    campaigns = []
-    activities = []
-    liquidation_items = []
-    last_sync = "Never"
-    
-    try:
-        campaigns_data = fetch_campaigns()
-        characters, completions = fetch_characters_and_history()
-        matrix = build_campaign_matrix(campaigns_data, characters, completions)
-        campaigns = summarize_campaigns(matrix, campaigns_data)
-        
-        if campaigns:
-            campaign_stats["total_campaigns"] = len(campaigns)
-            campaign_stats["campaigns_complete"] = sum(1 for c in campaigns if c.get("progress", 0) == 100)
-            campaign_stats["avg_progress"] = int(sum(c.get("progress", 0) for c in campaigns) / len(campaigns))
-    except Exception as e:
-        print(f"Dashboard campaign error: {e}")
-    
-    try:
-        conn = get_db_connection()
-        cur = conn.cursor()
-        sql = """
-            SELECT i.name, d.name, d.type, i.expansion, i.type
-            FROM holocron.instance_drops d
-            JOIN holocron.instance_locations i ON d.instance_id = i.instance_id
-            LIMIT 10
-        """
-        cur.execute(sql)
-        rows = cur.fetchall()
-        for row in rows:
-            activities.append({
-                "instance_name": row[0],
-                "drop_name": row[1],
-                "drop_type": row[2],
-                "expansion": row[3],
-                "type": row[4],
-                "available_count": 8
-            })
-        cur.close()
-        conn.close()
-    except Exception as e:
-        print(f"Dashboard navigator error: {e}")
-    
-    try:
-        conn = get_db_connection()
-        cur = conn.cursor()
-        cur.execute("SELECT * FROM holocron.view_liquidatable_assets LIMIT 10")
-        rows = cur.fetchall()
-        for row in rows:
-            liquidation_items.append({
-                "name": row[0],
-                "count": row[1],
-                "market_value": row[2],
-                "total_value": row[3]
-            })
-            liquidation_stats["item_count"] += row[1]
-            liquidation_stats["total_value"] += row[3]
-        cur.close()
-        conn.close()
-    except Exception as e:
-        print(f"Dashboard liquidation error: {e}")
-    
-    try:
-        conn = get_db_connection()
-        cur = conn.cursor()
-        cur.execute("SELECT faction_id, name, paragon_threshold FROM diplomat.factions")
-        rows = cur.fetchall()
-        for row in rows:
-            current_val = 8500 if row[0] == 2600 else 2000
-            percent = int((current_val / row[2]) * 100)
-            if percent > 80:
-                diplomat_stats["close_to_paragon"] += 1
-        cur.close()
-        conn.close()
-    except Exception as e:
-        print(f"Dashboard diplomat error: {e}")
-    
-    return render_template(
-        'dashboard.html',
-        pet_stats=pet_stats,
-        campaign_stats=campaign_stats,
-        liquidation_stats=liquidation_stats,
-        diplomat_stats=diplomat_stats,
-        campaigns=campaigns,
-        activities=activities,
-        liquidation_items=liquidation_items,
-        last_sync=last_sync
-    )
+# Legacy dashboard removed in favor of Resilient Dashboard
+
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5001)

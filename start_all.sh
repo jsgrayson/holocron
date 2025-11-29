@@ -21,20 +21,35 @@ cd /Users/jgrayson/Documents/petweaver
 python3 app.py &
 PETWEAVER_PID=$!
 
-echo ""
-echo "✅ All systems online!"
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "🌐 Holocron Dashboard: http://127.0.0.1:5001"
-echo "🐾 PetWeaver:         http://127.0.0.1:5002"
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo ""
-echo "📝 Process IDs:"
-echo "   Holocron:  $HOLOCRON_PID"
-echo "   PetWeaver: $PETWEAVER_PID"
-echo ""
-echo "To stop all servers: kill $HOLOCRON_PID $PETWEAVER_PID"
-echo "Or press Ctrl+C and run: killall python3"
-echo ""
 
-# Wait for either process to exit
+
+# 3. Start GoblinStack (FastAPI)
+echo "   Starting GoblinStack (Port 8000)..."
+cd /Users/jgrayson/Documents/goblin-clean-1
+python3 -m uvicorn backend.main:app --port 8000 > /tmp/goblin.log 2>&1 &
+GOBLIN_PID=$!
+echo "   ✅ GoblinStack started (PID: $GOBLIN_PID)"
+
+# 4. Start SkillWeaver (Python)
+echo "   Starting SkillWeaver (Port 3000)..."
+cd /Users/jgrayson/Documents/skillweaver-web
+python3 app.py > /tmp/skillweaver.log 2>&1 &
+SKILL_PID=$!
+echo "   ✅ SkillWeaver started (PID: $SKILL_PID)"
+
+echo "----------------------------------------"
+echo "� All systems operational!"
+echo "   - Holocron:   http://localhost:5001"
+echo "   - PetWeaver:  http://localhost:5002"
+echo "   - Goblin:     http://localhost:8000"
+if [ -n "$SKILL_PID" ]; then
+    echo "   - SkillWeaver: http://localhost:3000"
+fi
+echo "----------------------------------------"
+echo "Press Ctrl+C to stop all services."
+
+# Trap Ctrl+C (SIGINT) and kill all background processes
+trap "kill $HOLOCRON_PID $PETWEAVER_PID $GOBLIN_PID $SKILL_PID; exit" SIGINT
+
+# Wait for processes
 wait

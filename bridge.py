@@ -2,6 +2,10 @@ import time
 import os
 import json
 import requests
+import socket
+import shutil
+import hashlib
+from datetime import datetime
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 
@@ -9,6 +13,96 @@ from watchdog.events import FileSystemEventHandler
 # TODO: User needs to set the correct Account Name
 WOW_SAVED_VARIABLES_PATH = "/Applications/World of Warcraft/_retail_/WTF/Account/YOUR_ACCOUNT_NAME_HERE/SavedVariables"
 SERVER_URL = "http://localhost:5000/upload"
+
+class MirrorClient:
+    def __init__(self, server_url, wtf_path):
+        self.server_url = server_url
+        self.wtf_path = wtf_path
+        self.hostname = socket.gethostname()
+        self.device_type = "UNKNOWN"
+        
+    def register(self):
+        """Register device with server."""
+        try:
+            resp = requests.post(f"{self.server_url}/api/mirror/register", json={"hostname": self.hostname})
+            if resp.status_code == 200:
+                data = resp.json()
+                self.device_type = data.get('device_type')
+                print(f"[Mirror] Registered as {self.device_type} ({self.hostname})")
+                return True
+            else:
+                print(f"[Mirror] Registration failed with status {resp.status_code}: {resp.text}")
+        except requests.exceptions.ConnectionError:
+            print(f"[Mirror] Registration failed: Could not connect to server at {self.server_url}")
+        except Exception as e:
+            print(f"[Mirror] Registration failed: {e}")
+        return False
+
+    def backup_wtf(self):
+        """Create a safety backup of WTF."""
+        try:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            backup_dir = os.path.join(self.wtf_path, "Backups")
+            os.makedirs(backup_dir, exist_ok=True)
+            
+            # Backup Macros
+            # TODO: Replace "YOUR_ACCOUNT" with the actual account name from WOW_SAVED_VARIABLES_PATH
+            account_name = os.path.basename(os.path.dirname(WOW_SAVED_VARIABLES_PATH))
+            macro_file = os.path.join(self.wtf_path, "Account", account_name, "macros-cache.txt")
+            if os.path.exists(macro_file):
+                shutil.copy2(macro_file, os.path.join(backup_dir, f"macros_{timestamp}.txt"))
+                print(f"[Mirror] Backed up macros to {backup_dir}")
+            else:
+                print(f"[Mirror] Macro file not found at {macro_file}. Skipping macro backup.")
+        except Exception as e:
+            print(f"[Mirror] Backup failed: {e}")
+
+    def sync_macros(self):
+        """Sync macros with server."""
+        try:
+            # 1. Read Local Macros
+            # TODO: Replace "YOUR_ACCOUNT" with actual account discovery
+            account_name = os.path.basename(os.path.dirname(WOW_SAVED_VARIABLES_PATH))
+            macro_file = os.path.join(self.wtf_path, "Account", account_name, "macros-cache.txt")
+            
+            if not os.path.exists(macro_file):
+                print(f"[Mirror] Macro file not found at {macro_file}")
+                return
+
+            with open(macro_file, 'r', encoding='utf-8') as f:
+                content = f.read()
+
+            # 2. Upload Current (Backup/Sync Up)
+            payload = {
+                "hostname": self.hostname,
+                "file_type": "MACROS",
+                "content": content,
+                "char_guid": "GLOBAL" 
+            }
+            requests.post(f"{self.server_url}/api/mirror/upload", json=payload)
+            
+            # 3. Check for Updates (Sync Down)
+            resp = requests.get(f"{self.server_url}/api/mirror/sync", params={
+                "hostname": self.hostname,
+                "file_type": "MACROS",
+                "char_guid": "GLOBAL"
+            })
+            
+            if resp.status_code == 200:
+                data = resp.json()
+                if data.get("found"):
+                    server_content = data.get("content")
+                    # Simple check: if different, overwrite (Safety backup already done on init)
+                    if server_content != content:
+                        print("[Mirror] New macros found on server. Syncing down...")
+                        with open(macro_file, 'w', encoding='utf-8') as f:
+                            f.write(server_content)
+                        print("[Mirror] Macros synced successfully.")
+                    else:
+                        print("[Mirror] Macros are in sync.")
+            
+        except Exception as e:
+            print(f"[Mirror] Sync failed: {e}")
 
 class SavedVariablesHandler(FileSystemEventHandler):
     def on_modified(self, event):

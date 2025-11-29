@@ -46,3 +46,20 @@ CREATE TABLE IF NOT EXISTS holocron.items (
 -- Index for faster searching
 CREATE INDEX idx_items_name ON holocron.items(name);
 CREATE INDEX idx_items_item_id ON holocron.items(item_id);
+
+-- SkillWeaver Tables
+
+-- Profiles: Stores rotation profiles (e.g., Midnight, Balanced)
+CREATE TABLE IF NOT EXISTS skillweaver.profiles (
+    profile_id SERIAL PRIMARY KEY,
+    class_id INT NOT NULL, -- WoW Class ID
+    spec_id INT NOT NULL, -- WoW Spec ID
+    profile_name VARCHAR(50) NOT NULL, -- 'Midnight', 'Balanced', 'HighPerformance'
+    profile_type VARCHAR(20) NOT NULL, -- 'Priority', 'Sequence'
+    content TEXT, -- JSON or Lua string of the profile
+    last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(spec_id, profile_name)
+);
+
+-- Index for faster lookups
+CREATE INDEX idx_profiles_spec ON skillweaver.profiles(spec_id);
