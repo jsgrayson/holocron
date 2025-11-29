@@ -473,12 +473,14 @@ def goblin():
     sniper = goblin_engine.get_sniper_list()
     benchmarks = goblin_engine.get_gold_benchmarks()
     investments = goblin_engine.get_investments()
+    score = goblin_engine.get_score()
     
     return render_template('goblin.html',
                           analysis=analysis,
                           sniper=sniper,
                           benchmarks=benchmarks,
-                          investments=investments)
+                          investments=investments,
+                          score=score)
 
 # --- CODEX MODULE ---
 from codex_engine import CodexEngine, Role

@@ -252,12 +252,53 @@ class InvestmentAdvisor:
             }
         ]
 
+class GoblinScore:
+    """Gamification system for wealth accumulation"""
+    
+    TITLES = [
+        (0, "Street Peddler"),
+        (20, "Auction House Camper"),
+        (40, "Market Mover"),
+        (60, "Cartel Associate"),
+        (80, "Trade Prince"),
+        (95, "Goblin Gadgeteer")
+    ]
+    
+    def calculate_score(self, weekly_income: int, profit_margin: int) -> Dict:
+        """Calculate score based on metrics"""
+        # Score components
+        income_score = min(50, (weekly_income / 20000) * 50) # Cap at 20k/week for 50pts
+        margin_score = min(30, profit_margin) # Cap at 30% margin for 30pts
+        activity_score = 20 # Mock activity score
+        
+        total_score = int(income_score + margin_score + activity_score)
+        total_score = min(100, total_score)
+        
+        return {
+            "score": total_score,
+            "title": self._get_title(total_score),
+            "comparison": self._get_comparison(weekly_income)
+        }
+        
+    def _get_title(self, score: int) -> str:
+        current_title = "Peon"
+        for threshold, title in self.TITLES:
+            if score >= threshold:
+                current_title = title
+        return current_title
+        
+    def _get_comparison(self, income: int) -> str:
+        trade_prince_avg = 100000
+        percent = int((income / trade_prince_avg) * 100)
+        return f"You are earning {percent}% of a Trade Prince's weekly average."
+
 # Update GoblinEngine to include new modules
 class GoblinEngineExpanded(GoblinEngine):
     def __init__(self):
         super().__init__()
         self.gold_tracker = GoldTracker()
         self.investment_advisor = InvestmentAdvisor()
+        self.goblin_score = GoblinScore()
         
     def get_gold_benchmarks(self) -> Dict:
         return {
@@ -269,6 +310,10 @@ class GoblinEngineExpanded(GoblinEngine):
         
     def get_investments(self) -> Dict[str, List[Dict]]:
         return self.investment_advisor.get_recommendations()
+        
+    def get_score(self) -> Dict:
+        # Mock inputs for now
+        return self.goblin_score.calculate_score(15400, 25)
 
 if __name__ == "__main__":
     # Test the engine
