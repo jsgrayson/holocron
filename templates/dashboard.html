@@ -1,277 +1,171 @@
-<!DOCTYPE html>
-<html lang="en">
+{% extends "base.html" %}
 
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Holocron Dashboard</title>
-    <style>
-        :root {
-            --bg-color: #121212;
-            --card-bg: #1e1e1e;
-            --text-color: #e0e0e0;
-            --accent-color: #bb86fc;
-            --border-color: #333;
-            --success-color: #03dac6;
-            --warning-color: #cf6679;
-        }
+{% block title %}Holocron Dashboard{% endblock %}
 
-        body {
-            font-family: 'Inter', sans-serif;
-            background-color: var(--bg-color);
-            color: var(--text-color);
-            margin: 0;
-            padding: 20px;
-        }
-
-        .container {
-            max-width: 1200px;
-            margin: 0 auto;
-        }
-
-        header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 20px;
-            border-bottom: 1px solid var(--border-color);
-            padding-bottom: 10px;
-        }
-
-        h1 {
-            margin: 0;
-            color: var(--accent-color);
-        }
-
-        .status-badge {
-            padding: 5px 10px;
-            border-radius: 4px;
-            font-weight: bold;
-            font-size: 0.9em;
-        }
-
-        .status-online {
-            background-color: rgba(3, 218, 198, 0.2);
-            color: var(--success-color);
-        }
-
-        .status-offline {
-            background-color: rgba(207, 102, 121, 0.2);
-            color: var(--warning-color);
-        }
-
-        .tabs {
-            display: flex;
-            gap: 10px;
-            margin-bottom: 20px;
-        }
-
-        .tab-btn {
-            background: var(--card-bg);
-            border: 1px solid var(--border-color);
-            color: var(--text-color);
-            padding: 10px 20px;
-            cursor: pointer;
-            border-radius: 4px;
-        }
-
-        .tab-btn.active {
-            background: var(--accent-color);
-            color: #000;
-            border-color: var(--accent-color);
-        }
-
-        .content-section {
-            display: none;
-        }
-
-        .content-section.active {
-            display: block;
-        }
-
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            background: var(--card-bg);
-            border-radius: 8px;
-            overflow: hidden;
-        }
-
-        th,
-        td {
-            padding: 12px;
-            text-align: left;
-            border-bottom: 1px solid var(--border-color);
-        }
-
-        th {
-            background-color: #2c2c2c;
-        }
-
-        tr:hover {
-            background-color: #252525;
-        }
-
-        .copy-btn {
-            background: transparent;
-            border: 1px solid var(--accent-color);
-            color: var(--accent-color);
-            padding: 2px 8px;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 0.8em;
-        }
-
-        .copy-btn:hover {
-            background: var(--accent-color);
-            color: #000;
-        }
-    </style>
-</head>
-
-<body>
-    <div class="container">
-        <header>
-            <h1>Holocron Dashboard</h1>
-            <div id="status-indicator" class="status-badge status-offline">Checking Status...</div>
-        </header>
-
-        <div class="tabs">
-            <button class="tab-btn active" onclick="showTab('stats')">Stat Weights</button>
-            <button class="tab-btn" onclick="showTab('talents')">Talent Builds</button>
-            <button class="tab-btn" onclick="showTab('battles')">Pet Battles</button>
+{% block content %}
+<div class="row mb-4">
+    <div class="col-md-12">
+        <div class="card bg-dark text-white border-primary">
+            <div class="card-body d-flex justify-content-between align-items-center">
+                <div>
+                    <h1 class="card-title text-primary mb-0">
+                        <i class="fas fa-cube me-2"></i>Holocron Dashboard
+                    </h1>
+                    <p class="text-muted mb-0">Unified Command Center</p>
+                </div>
+                <div class="text-end">
+                    <h4 class="mb-0 text-white">{{ summary.timestamp }}</h4>
+                    <span class="badge bg-success">System Online</span>
+                </div>
+            </div>
         </div>
+    </div>
+</div>
 
-        <!-- STATS SECTION -->
-        <div id="stats" class="content-section active">
-            <h2>Stat Priorities</h2>
-            <table id="stats-table">
-                <thead>
-                    <tr>
-                        <th>Spec</th>
-                        <th>Stat Priority</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <tr>
-                        <td colspan="2">Loading...</td>
-                    </tr>
-                </tbody>
-            </table>
-        </div>
-
-        <!-- TALENTS SECTION -->
-        <div id="talents" class="content-section">
-            <h2>Talent Builds</h2>
-            <table id="talents-table">
-                <thead>
-                    <tr>
-                        <th>Spec</th>
-                        <th>Build Name</th>
-                        <th>Import String</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <tr>
-                        <td colspan="3">Loading...</td>
-                    </tr>
-                </tbody>
-            </table>
-        </div>
-
-        <!-- BATTLES SECTION -->
-        <div id="battles" class="content-section">
-            <h2>Recorded Battles</h2>
-            <table id="battles-table">
-                <thead>
-                    <tr>
-                        <th>Time</th>
-                        <th>Enemy</th>
-                        <th>Status</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <tr>
-                        <td colspan="3">Loading...</td>
-                    </tr>
-                </tbody>
-            </table>
+<div class="row g-4">
+    <!-- Pathfinder -->
+    <div class="col-md-4">
+        <div class="card h-100 bg-dark text-white border-secondary">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0"><i class="fas fa-map me-2 text-info"></i>Pathfinder</h5>
+                <span class="badge bg-success">Ready</span>
+            </div>
+            <div class="card-body">
+                <h2 class="text-center mb-3">{{ summary.modules.pathfinder.nodes }} Nodes</h2>
+                <p class="text-muted text-center">Graph Routing Engine Active</p>
+                <a href="/pathfinder" class="btn btn-outline-info w-100">Open Map</a>
+            </div>
         </div>
     </div>
 
-    <script>
-        function showTab(tabId) {
-            document.querySelectorAll('.content-section').forEach(el => el.classList.remove('active'));
-            document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
-            document.getElementById(tabId).classList.add('active');
-            event.target.classList.add('active');
-        }
+    <!-- Diplomat -->
+    <div class="col-md-4">
+        <div class="card h-100 bg-dark text-white border-secondary">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0"><i class="fas fa-handshake me-2 text-warning"></i>Diplomat</h5>
+                <span class="badge bg-warning text-dark">Opportunity</span>
+            </div>
+            <div class="card-body">
+                <h5 class="text-center mb-1">{{ summary.modules.diplomat.best_opportunity }}</h5>
+                <p class="text-muted text-center mb-3">{{ summary.modules.diplomat.action }}</p>
+                <a href="/diplomat" class="btn btn-outline-warning w-100">View Factions</a>
+            </div>
+        </div>
+    </div>
 
-        async function fetchData(endpoint, tableId, renderRow) {
-            try {
-                const res = await fetch(endpoint);
-                const json = await res.json();
+    <!-- Navigator -->
+    <div class="col-md-4">
+        <div class="card h-100 bg-dark text-white border-secondary">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0"><i class="fas fa-compass me-2 text-success"></i>Navigator</h5>
+                <span class="badge bg-primary">Top Pick</span>
+            </div>
+            <div class="card-body">
+                <h5 class="text-center mb-1">{{ summary.modules.navigator.top_activity }}</h5>
+                <p class="text-muted text-center mb-3">Score: {{ summary.modules.navigator.score }}</p>
+                <a href="/navigator" class="btn btn-outline-success w-100">Find Activities</a>
+            </div>
+        </div>
+    </div>
 
-                // Update Status Badge
-                const badge = document.getElementById('status-indicator');
-                if (json.source === 'db') {
-                    badge.textContent = 'Online (Live DB)';
-                    badge.className = 'status-badge status-online';
-                } else if (json.source === 'json') {
-                    badge.textContent = 'Offline (JSON Fallback)';
-                    badge.className = 'status-badge status-offline';
-                } else {
-                    badge.textContent = 'No Data';
-                    badge.className = 'status-badge status-offline';
-                }
+    <!-- Knowledge -->
+    <div class="col-md-4">
+        <div class="card h-100 bg-dark text-white border-secondary">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0"><i class="fas fa-book me-2 text-primary"></i>Knowledge</h5>
+                <span class="badge bg-info">{{ summary.modules.knowledge.reset_in }}</span>
+            </div>
+            <div class="card-body">
+                <div class="progress mb-3" style="height: 20px;">
+                    <div class="progress-bar bg-primary" role="progressbar"
+                        style="width: {{ summary.modules.knowledge.weekly_progress }}%">
+                        {{ summary.modules.knowledge.weekly_progress }}%
+                    </div>
+                </div>
+                <p class="text-center mb-3">{{ summary.modules.knowledge.points_earned }} Points Earned</p>
+                <a href="/knowledge" class="btn btn-outline-primary w-100">Weekly Checklist</a>
+            </div>
+        </div>
+    </div>
 
-                const tbody = document.querySelector(`#${tableId} tbody`);
-                tbody.innerHTML = '';
+    <!-- Utility -->
+    <div class="col-md-4">
+        <div class="card h-100 bg-dark text-white border-secondary">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0"><i class="fas fa-tools me-2 text-secondary"></i>Utility</h5>
+                <span class="badge bg-secondary">{{ summary.modules.utility.overall_percent }}% Done</span>
+            </div>
+            <div class="card-body">
+                <h5 class="text-center mb-1">{{ summary.modules.utility.mounts }} Mounts</h5>
+                <p class="text-muted text-center mb-3">{{ summary.modules.utility.missing_easy }} Easy Targets</p>
+                <a href="/utility" class="btn btn-outline-secondary w-100">Track Collection</a>
+            </div>
+        </div>
+    </div>
 
-                if (json.data && json.data.length > 0) {
-                    json.data.forEach(item => {
-                        tbody.innerHTML += renderRow(item);
-                    });
-                } else {
-                    tbody.innerHTML = '<tr><td colspan="100%">No data available.</td></tr>';
-                }
-            } catch (e) {
-                console.error(e);
-            }
-        }
+    <!-- Goblin -->
+    <div class="col-md-4">
+        <div class="card h-100 bg-dark text-white border-secondary">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0"><i class="fas fa-coins me-2 text-warning"></i>Goblin Brain</h5>
+                <span class="badge bg-success">+{{ summary.modules.goblin.profit }}g</span>
+            </div>
+            <div class="card-body">
+                <h5 class="text-center mb-1">{{ summary.modules.goblin.top_craft }}</h5>
+                <p class="text-muted text-center mb-3">{{ summary.modules.goblin.sniper_hits }} Sniper Hits</p>
+                <a href="/goblin" class="btn btn-outline-warning w-100">Market Analysis</a>
+            </div>
+        </div>
+    </div>
 
-        function copyToClipboard(text) {
-            navigator.clipboard.writeText(text).then(() => {
-                alert('Copied to clipboard!');
-            });
-        }
+    <!-- Codex -->
+    <div class="col-md-4">
+        <div class="card h-100 bg-dark text-white border-secondary">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0"><i class="fas fa-scroll me-2 text-danger"></i>The Codex</h5>
+                <span class="badge bg-danger">Raid</span>
+            </div>
+            <div class="card-body">
+                <h5 class="text-center mb-1">{{ summary.modules.codex.current_raid }}</h5>
+                <p class="text-muted text-center mb-3">{{ summary.modules.codex.bosses }} Bosses Loaded</p>
+                <a href="/codex" class="btn btn-outline-danger w-100">Encounter Guide</a>
+            </div>
+        </div>
+    </div>
 
-        // Initial Load
-        fetchData('/api/stats', 'stats-table', item => `
-            <tr>
-                <td>${item.spec}</td>
-                <td>${item.stat_string}</td>
-            </tr>
-        `);
+    <!-- Vault -->
+    <div class="col-md-4">
+        <div class="card h-100 bg-dark text-white border-secondary">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0"><i class="fas fa-dungeon me-2 text-white"></i>Vault</h5>
+                <span class="badge bg-success">{{ summary.modules.vault.unlocked }} Unlocked</span>
+            </div>
+            <div class="card-body">
+                <h5 class="text-center mb-1">Max Reward: {{ summary.modules.vault.max_ilvl }} ilvl</h5>
+                <p class="text-muted text-center mb-3">Great Vault Status</p>
+                <a href="/vault" class="btn btn-outline-light w-100">View Grid</a>
+            </div>
+        </div>
+    </div>
 
-        fetchData('/api/talents', 'talents-table', item => `
-            <tr>
-                <td>${item.spec}</td>
-                <td>${item.build_name}</td>
-                <td>
-                    <button class="copy-btn" onclick="copyToClipboard('${item.talent_string}')">Copy String</button>
-                </td>
-            </tr>
-        `);
-
-        fetchData('/api/battles', 'battles-table', item => `
-            <tr>
-                <td>${new Date(item.timestamp * 1000).toLocaleString()}</td>
-                <td>${item.enemyName || 'Unknown'}</td>
-                <td>${item.status || 'Recorded'}</td>
-            </tr>
-        `);
-    </script>
-</body>
-
-</html>
+    <!-- Scout -->
+    <div class="col-md-4">
+        <div class="card h-100 bg-dark text-white border-secondary">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0"><i class="fas fa-bell me-2 text-danger"></i>The Scout</h5>
+                {% if summary.modules.scout.critical > 0 %}
+                <span class="badge bg-danger animate__animated animate__pulse animate__infinite">{{
+                    summary.modules.scout.critical }} Critical</span>
+                {% else %}
+                <span class="badge bg-success">Quiet</span>
+                {% endif %}
+            </div>
+            <div class="card-body">
+                <h5 class="text-center mb-1">{{ summary.modules.scout.active_alerts }} Active Alerts</h5>
+                <p class="text-muted text-center mb-3">Next: {{ summary.modules.scout.next_alert }}</p>
+                <a href="/scout" class="btn btn-outline-danger w-100">View Alerts</a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
