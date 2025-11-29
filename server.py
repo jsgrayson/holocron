@@ -432,6 +432,50 @@ def utility():
                           summary=summary,
                           missing_mounts=missing_mounts)
 
+                          summary=summary,
+                          missing_mounts=missing_mounts)
+
+# --- GOBLIN BRAIN MODULE ---
+from goblin_engine import GoblinEngine, ItemType
+
+# Initialize Goblin engine once
+goblin_engine = GoblinEngine()
+goblin_engine.load_mock_data()
+
+@app.route('/api/goblin/dashboard')
+def goblin_dashboard():
+    """Get market analysis dashboard data"""
+    analysis = goblin_engine.analyze_market()
+    sniper = goblin_engine.get_sniper_list()
+    
+    return jsonify({
+        "analysis": analysis,
+        "sniper": sniper
+    })
+
+@app.route('/api/goblin/crafting')
+def goblin_crafting():
+    """Get prioritized crafting queue"""
+    analysis = goblin_engine.analyze_market()
+    
+    # Filter for profitable items only
+    queue = [
+        opp for opp in analysis['opportunities'] 
+        if opp['profit'] > 0 and opp['sale_rate'] >= 0.2
+    ]
+    
+    return jsonify({"queue": queue})
+
+@app.route('/goblin')
+def goblin():
+    """Goblin Brain UI"""
+    analysis = goblin_engine.analyze_market()
+    sniper = goblin_engine.get_sniper_list()
+    
+    return render_template('goblin.html',
+                          analysis=analysis,
+                          sniper=sniper)
+
 # --- CODEX MODULE ---
 
 def fetch_campaigns():
