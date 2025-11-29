@@ -62,25 +62,80 @@
     <!-- Investment Advisor -->
     <div class="col-md-4">
         <div class="card h-100 bg-dark text-white border-secondary">
-            <div class="card-header">
-                <h5 class="mb-0"><i class="fas fa-piggy-bank me-2 text-warning"></i>Bank Tab Advisor</h5>
+            <div class="card-header border-secondary">
+                <ul class="nav nav-tabs card-header-tabs" id="investmentTabs" role="tablist">
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link active text-warning" id="hold-tab" data-bs-toggle="tab"
+                            data-bs-target="#hold" type="button" role="tab"><i
+                                class="fas fa-piggy-bank me-1"></i>Holds</button>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link text-info" id="flip-tab" data-bs-toggle="tab" data-bs-target="#flip"
+                            type="button" role="tab"><i class="fas fa-exchange-alt me-1"></i>Flips</button>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link text-success" id="shuffle-tab" data-bs-toggle="tab"
+                            data-bs-target="#shuffle" type="button" role="tab"><i
+                                class="fas fa-recycle me-1"></i>Shuffles</button>
+                    </li>
+                </ul>
             </div>
             <div class="card-body p-0">
-                <div class="list-group list-group-flush">
-                    {% for inv in investments %}
-                    <div class="list-group-item bg-dark text-white border-secondary">
-                        <div class="d-flex w-100 justify-content-between">
-                            <h6 class="mb-1 text-warning">{{ inv.item }}</h6>
-                            {% if inv.recommendation == 'BUY' %}
-                            <span class="badge bg-success">BUY</span>
-                            {% else %}
-                            <span class="badge bg-info">HOLD</span>
-                            {% endif %}
+                <div class="tab-content" id="investmentTabsContent">
+                    <!-- Long Term Holds -->
+                    <div class="tab-pane fade show active" id="hold" role="tabpanel">
+                        <div class="list-group list-group-flush">
+                            {% for inv in investments.bank_tab %}
+                            <div class="list-group-item bg-dark text-white border-secondary">
+                                <div class="d-flex w-100 justify-content-between">
+                                    <h6 class="mb-1 text-warning">{{ inv.item }}</h6>
+                                    {% if inv.recommendation == 'BUY' %}
+                                    <span class="badge bg-success">BUY</span>
+                                    {% else %}
+                                    <span class="badge bg-info">HOLD</span>
+                                    {% endif %}
+                                </div>
+                                <p class="mb-1 small">{{ inv.reason }}</p>
+                                <small class="text-muted">Price: {{ inv.current_price }}g (Avg: {{ inv.avg_price
+                                    }}g)</small>
+                            </div>
+                            {% endfor %}
                         </div>
-                        <p class="mb-1 small">{{ inv.reason }}</p>
-                        <small class="text-muted">Price: {{ inv.current_price }}g (Avg: {{ inv.avg_price }}g)</small>
                     </div>
-                    {% endfor %}
+
+                    <!-- Flipping -->
+                    <div class="tab-pane fade" id="flip" role="tabpanel">
+                        <div class="list-group list-group-flush">
+                            {% for flip in investments.flipping %}
+                            <div class="list-group-item bg-dark text-white border-secondary">
+                                <div class="d-flex w-100 justify-content-between">
+                                    <h6 class="mb-1 text-info">{{ flip.item }}</h6>
+                                    <span class="badge bg-success">+{{ flip.profit_per }}g/ea</span>
+                                </div>
+                                <p class="mb-1 small">{{ flip.reason }}</p>
+                                <small class="text-muted">Buy: {{ flip.buy_price }}g | Sell: {{ flip.market_price
+                                    }}g</small>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+
+                    <!-- Shuffles -->
+                    <div class="tab-pane fade" id="shuffle" role="tabpanel">
+                        <div class="list-group list-group-flush">
+                            {% for shuf in investments.vendor_shuffles %}
+                            <div class="list-group-item bg-dark text-white border-secondary">
+                                <div class="d-flex w-100 justify-content-between">
+                                    <h6 class="mb-1 text-success">{{ shuf.item }}</h6>
+                                    <span class="badge bg-success">+{{ shuf.profit_per }}g</span>
+                                </div>
+                                <p class="mb-1 small">{{ shuf.notes }}</p>
+                                <small class="text-muted">Cost: {{ shuf.input_cost }}g | Vendor: {{ shuf.vendor_sell
+                                    }}g</small>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>

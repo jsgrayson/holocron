@@ -196,9 +196,18 @@ class GoldTracker:
         ]
 
 class InvestmentAdvisor:
-    """Recommends items to buy and hold"""
-    def get_bank_tab_recommendations(self) -> List[Dict]:
-        """Identify items with high long-term value"""
+    """Recommends items to buy, hold, flip, or shuffle"""
+    
+    def get_recommendations(self) -> Dict[str, List[Dict]]:
+        """Get all investment recommendations categorized"""
+        return {
+            "bank_tab": self._get_long_term_holds(),
+            "flipping": self._get_flipping_candidates(),
+            "vendor_shuffles": self._get_vendor_shuffles()
+        }
+
+    def _get_long_term_holds(self) -> List[Dict]:
+        """Identify items with high long-term value (Bank Tab)"""
         return [
             {
                 "item": "Draconium Ore",
@@ -215,14 +224,31 @@ class InvestmentAdvisor:
                 "recommendation": "HOLD",
                 "reason": "Price stable. Wait for raid release spike.",
                 "confidence": "Medium"
-            },
+            }
+        ]
+
+    def _get_flipping_candidates(self) -> List[Dict]:
+        """Identify short-term flip opportunities"""
+        return [
             {
-                "item": "Resonant Crystal",
-                "current_price": 200,
-                "avg_price": 250,
-                "recommendation": "BUY",
-                "reason": "Undervalued. crafting demand increasing.",
-                "confidence": "High"
+                "item": "Khaz Algar Herb",
+                "buy_price": 20,
+                "market_price": 25,
+                "profit_per": 4, # After 5% cut
+                "volume": "High",
+                "reason": "Posted below vendor floor (bot dump?)"
+            }
+        ]
+
+    def _get_vendor_shuffles(self) -> List[Dict]:
+        """Identify craft-to-vendor loops"""
+        return [
+            {
+                "item": "Spool of Wildercloth",
+                "input_cost": 1.5, # 5 cloth @ 0.3g
+                "vendor_sell": 2.1,
+                "profit_per": 0.6,
+                "notes": "Requires Tailoring 10. Infinite demand."
             }
         ]
 
@@ -241,8 +267,8 @@ class GoblinEngineExpanded(GoblinEngine):
             "history": self.gold_tracker.get_history()
         }
         
-    def get_investments(self) -> List[Dict]:
-        return self.investment_advisor.get_bank_tab_recommendations()
+    def get_investments(self) -> Dict[str, List[Dict]]:
+        return self.investment_advisor.get_recommendations()
 
 if __name__ == "__main__":
     # Test the engine
