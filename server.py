@@ -333,6 +333,63 @@ def pathfinder():
     ]
     return render_template('pathfinder.html', zones=zones)
 
+# --- KNOWLEDGE POINT TRACKER ---
+from knowledge_tracker import KnowledgeTracker, Profession
+
+# Initialize Knowledge tracker once
+knowledge_tracker = KnowledgeTracker()
+knowledge_tracker.load_mock_data()
+
+@app.route('/api/knowledge/checklist')
+def knowledge_checklist():
+    """
+    Get knowledge point checklist for a profession
+    Query params:
+        profession (str): Profession name (e.g., "Blacksmithing")
+        character (str): Optional character GUID
+    """
+    profession_name = request.args.get('profession', 'Blacksmithing')
+    character_guid = request.args.get('character', None)
+    
+    try:
+        profession = Profession[profession_name.upper().replace(" ", "_")]
+    except KeyError:
+        return jsonify({"error": f"Invalid profession: {profession_name}"}), 400
+    
+    checklist = knowledge_tracker.get_checklist(profession, character_guid)
+    return jsonify(checklist)
+
+@app.route('/api/knowledge/complete', methods=['POST'])
+def knowledge_complete():
+    """
+    Mark a knowledge source as complete/incomplete
+    POST body: {source_id: int, character: str, complete: bool}
+    """
+    data = request.get_json()
+    source_id = data.get('source_id')
+    character_guid = data.get('character')
+    complete = data.get('complete', True)
+    
+    if not source_id or not character_guid:
+        return jsonify({"error": "Missing source_id or character"}), 400
+    
+    if complete:
+        knowledge_tracker.mark_complete(source_id, character_guid)
+    else:
+        knowledge_tracker.mark_incomplete(source_id, character_guid)
+    
+    return jsonify({"success": True, "source_id": source_id, "complete": complete})
+
+@app.route('/knowledge')
+def knowledge():
+    """Knowledge Point Tracker UI"""
+    # Get checklist for default profession
+    checklist = knowledge_tracker.get_checklist(Profession.BLACKSMITHING, "GUID-MainWarrior")
+    
+    return render_template('knowledge.html', 
+                          profession="Blacksmithing",
+                          checklist=checklist)
+
 # --- CODEX MODULE ---
 
 def fetch_campaigns():
