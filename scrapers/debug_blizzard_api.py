@@ -75,5 +75,21 @@ if __name__ == "__main__":
             {'namespace': 'static-us'}
         )
         
+        # 4. Test Region Index (Dynamic) - Should be very safe
+        test_endpoint(
+            "Region Index",
+            "https://us.api.blizzard.com/data/wow/region/index",
+            token,
+            {'namespace': 'dynamic-us'}
+        )
+
+        # 5. Test Playable Classes (Static) - Should be very safe
+        test_endpoint(
+            "Playable Classes",
+            "https://us.api.blizzard.com/data/wow/playable-class/index",
+            token,
+            {'namespace': 'static-us'}
+        )
+        
     except Exception as e:
         print(f"Fatal error: {e}")

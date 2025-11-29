@@ -471,10 +471,14 @@ def goblin():
     """Goblin Brain UI"""
     analysis = goblin_engine.analyze_market()
     sniper = goblin_engine.get_sniper_list()
+    benchmarks = goblin_engine.get_gold_benchmarks()
+    investments = goblin_engine.get_investments()
     
     return render_template('goblin.html',
                           analysis=analysis,
-                          sniper=sniper)
+                          sniper=sniper,
+                          benchmarks=benchmarks,
+                          investments=investments)
 
 # --- CODEX MODULE ---
 from codex_engine import CodexEngine, Role

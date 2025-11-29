@@ -166,6 +166,84 @@ class GoblinEngine:
         
         return sniper_hits
 
+class GoldTracker:
+    """Tracks gold income over time"""
+    def __init__(self):
+        self.history = [] # List of (date, amount)
+        
+    def get_benchmark(self, period: str) -> Dict:
+        """Get income for a specific period"""
+        # Mock data
+        if period == 'day':
+            return {"income": 1250, "change": "+5%"}
+        elif period == 'week':
+            return {"income": 15400, "change": "+12%"}
+        elif period == 'month':
+            return {"income": 62000, "change": "-3%"}
+        return {"income": 0, "change": "0%"}
+        
+    def get_history(self) -> List[Dict]:
+        """Get gold history for graphing"""
+        # Mock 7-day history
+        return [
+            {"day": "Mon", "gold": 124000},
+            {"day": "Tue", "gold": 128000}, # Reset day spike
+            {"day": "Wed", "gold": 131000},
+            {"day": "Thu", "gold": 132500},
+            {"day": "Fri", "gold": 133000},
+            {"day": "Sat", "gold": 138000}, # Weekend sales
+            {"day": "Sun", "gold": 142000},
+        ]
+
+class InvestmentAdvisor:
+    """Recommends items to buy and hold"""
+    def get_bank_tab_recommendations(self) -> List[Dict]:
+        """Identify items with high long-term value"""
+        return [
+            {
+                "item": "Draconium Ore",
+                "current_price": 45,
+                "avg_price": 55,
+                "recommendation": "BUY",
+                "reason": "20% below monthly average. Reset day demand expected.",
+                "confidence": "High"
+            },
+            {
+                "item": "Awakened Order",
+                "current_price": 150,
+                "avg_price": 145,
+                "recommendation": "HOLD",
+                "reason": "Price stable. Wait for raid release spike.",
+                "confidence": "Medium"
+            },
+            {
+                "item": "Resonant Crystal",
+                "current_price": 200,
+                "avg_price": 250,
+                "recommendation": "BUY",
+                "reason": "Undervalued. crafting demand increasing.",
+                "confidence": "High"
+            }
+        ]
+
+# Update GoblinEngine to include new modules
+class GoblinEngineExpanded(GoblinEngine):
+    def __init__(self):
+        super().__init__()
+        self.gold_tracker = GoldTracker()
+        self.investment_advisor = InvestmentAdvisor()
+        
+    def get_gold_benchmarks(self) -> Dict:
+        return {
+            "day": self.gold_tracker.get_benchmark('day'),
+            "week": self.gold_tracker.get_benchmark('week'),
+            "month": self.gold_tracker.get_benchmark('month'),
+            "history": self.gold_tracker.get_history()
+        }
+        
+    def get_investments(self) -> List[Dict]:
+        return self.investment_advisor.get_bank_tab_recommendations()
+
 if __name__ == "__main__":
     # Test the engine
     print("\n" + "="*70)
