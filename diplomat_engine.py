@@ -137,6 +137,10 @@ class DiplomatEngine:
                     })
         
         return sorted(opportunities, key=lambda x: x["percent"], reverse=True)
+        
+    def get_opportunities(self) -> List[Dict]:
+        """Alias for find_paragon_opportunities (Dashboard compatibility)"""
+        return self.find_paragon_opportunities()
     
     def get_recommended_quests(self, faction_id: int, limit: int = 5) -> List[Dict]:
         """Get best WQs for a faction, sorted by efficiency"""

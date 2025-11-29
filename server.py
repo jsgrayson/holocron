@@ -557,6 +557,28 @@ def scout():
     """The Scout UI - Push Alerts"""
     alerts = scout_engine.get_alerts()
     return render_template('scout.html', alerts=alerts)
+    return render_template('scout.html', alerts=alerts)
+
+# --- DASHBOARD MODULE ---
+from dashboard_engine import DashboardEngine
+
+# Initialize Dashboard engine once
+dashboard_engine = DashboardEngine()
+
+@app.route('/api/dashboard/summary')
+def dashboard_summary():
+    """Get unified dashboard summary"""
+    try:
+        summary = dashboard_engine.get_dashboard_summary()
+        return jsonify(summary)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/dashboard')
+def dashboard():
+    """Enhanced Dashboard UI"""
+    summary = dashboard_engine.get_dashboard_summary()
+    return render_template('dashboard.html', summary=summary)
 
 def fetch_campaigns():
     """

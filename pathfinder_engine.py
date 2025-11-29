@@ -52,6 +52,25 @@ class PathfinderEngine:
         conn.close()
         
         print(f"✓ Graph built: {self.graph.number_of_nodes()} zones, {self.graph.number_of_edges()} connections")
+        
+    def load_mock_data(self):
+        """Load mock data for testing without DB"""
+        # Add some zones
+        self.zones[84] = {"name": "Stormwind", "expansion": "Classic"}
+        self.zones[1670] = {"name": "Oribos", "expansion": "Shadowlands"}
+        self.zones[1978] = {"name": "Dragon Isles", "expansion": "Dragonflight"}
+        self.zones[2022] = {"name": "The Waking Shores", "expansion": "Dragonflight"}
+        self.zones[2023] = {"name": "Ohn'ahran Plains", "expansion": "Dragonflight"}
+        
+        # Add nodes to graph
+        for zid, data in self.zones.items():
+            self.graph.add_node(zid, **data)
+            
+        # Add some edges
+        self.graph.add_edge(84, 1670, method="PORTAL", time=15, requirements="Mage")
+        self.graph.add_edge(1670, 84, method="PORTAL", time=15, requirements="")
+        
+        print(f"✓ Mock Graph built: {self.graph.number_of_nodes()} zones")
     
     def find_shortest_path(
         self,
