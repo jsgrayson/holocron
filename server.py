@@ -507,6 +507,37 @@ def codex():
     
     return render_template('codex.html',
                           instance=instance)
+                          instance=instance)
+
+# --- VAULT VISUALIZER ---
+from vault_engine import VaultEngine, VaultCategory
+
+# Initialize Vault engine once
+vault_engine = VaultEngine()
+vault_engine.load_mock_data()
+
+@app.route('/api/vault/status')
+def vault_status():
+    """Get current vault status"""
+    status = vault_engine.get_status()
+    return jsonify(status)
+
+@app.route('/api/vault/update', methods=['POST'])
+def vault_update():
+    """
+    Update vault progress (Mock/Debug)
+    POST body: {category: "Raid", slot_id: 1, progress: 3}
+    """
+    data = request.get_json()
+    # In a real app, this would update the DB
+    # For now, just return success
+    return jsonify({"success": True, "message": "Vault updated (Mock)"})
+
+@app.route('/vault')
+def vault():
+    """Vault Visualizer UI"""
+    status = vault_engine.get_status()
+    return render_template('vault.html', status=status)
 
 def fetch_campaigns():
     """
