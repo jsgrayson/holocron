@@ -11,11 +11,12 @@
                     <h1 class="card-title text-warning mb-0">
                         <i class="fas fa-coins me-2"></i>Goblin Brain
                     </h1>
-                    <p class="text-muted mb-0">Market Intelligence & Investment Advisor</p>
+                    <p class="text-muted mb-0">Crafting Intelligence & Optimization</p>
                 </div>
                 <div class="text-end">
-                    <h4 class="mb-0 text-success">+{{ benchmarks.week.income }}g</h4>
-                    <small class="text-muted">Weekly Income ({{ benchmarks.week.change }})</small>
+                    <a href="http://localhost:8000" target="_blank" class="btn btn-outline-warning">
+                        <i class="fas fa-external-link-alt me-2"></i>Open GoblinStack
+                    </a>
                 </div>
             </div>
         </div>
@@ -24,8 +25,8 @@
 
 <!-- Goblin Scorecard -->
 <div class="row mb-4">
-    <div class="col-md-12">
-        <div class="card bg-dark text-white border-success">
+    <div class="col-md-8">
+        <div class="card bg-dark text-white border-success h-100">
             <div class="card-body d-flex justify-content-between align-items-center">
                 <div class="d-flex align-items-center">
                     <div class="rounded-circle bg-success d-flex align-items-center justify-content-center me-3"
@@ -43,123 +44,17 @@
             </div>
         </div>
     </div>
-</div>
 
-<!-- Gold Benchmarks -->
-<div class="row mb-4">
-    <div class="col-md-8">
-        <div class="card h-100 bg-dark text-white border-secondary">
-            <div class="card-header">
-                <h5 class="mb-0"><i class="fas fa-chart-line me-2 text-info"></i>Gold Benchmarks</h5>
-            </div>
-            <div class="card-body">
-                <div class="d-flex justify-content-around mb-4">
-                    <div class="text-center">
-                        <h3 class="text-white mb-0">{{ benchmarks.day.income }}g</h3>
-                        <small class="text-muted">Today ({{ benchmarks.day.change }})</small>
-                    </div>
-                    <div class="text-center border-start border-end border-secondary px-5">
-                        <h3 class="text-success mb-0">{{ benchmarks.week.income }}g</h3>
-                        <small class="text-muted">This Week ({{ benchmarks.week.change }})</small>
-                    </div>
-                    <div class="text-center">
-                        <h3 class="text-white mb-0">{{ benchmarks.month.income }}g</h3>
-                        <small class="text-muted">This Month ({{ benchmarks.month.change }})</small>
-                    </div>
-                </div>
-                <!-- Simple CSS Bar Chart for History -->
-                <div class="d-flex align-items-end justify-content-between" style="height: 150px;">
-                    {% for day in benchmarks.history %}
-                    <div class="text-center w-100 mx-1">
-                        <div class="bg-warning opacity-75 rounded-top"
-                            style="height: {{ (day.gold / 150000) * 100 }}%; min-height: 5px;" title="{{ day.gold }}g">
-                        </div>
-                        <small class="text-muted d-block mt-1" style="font-size: 0.7rem;">{{ day.day }}</small>
-                    </div>
-                    {% endfor %}
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Investment Advisor -->
+    <!-- GoblinStack Integration -->
     <div class="col-md-4">
-        <div class="card h-100 bg-dark text-white border-secondary">
-            <div class="card-header border-secondary">
-                <ul class="nav nav-tabs card-header-tabs" id="investmentTabs" role="tablist">
-                    <li class="nav-item" role="presentation">
-                        <button class="nav-link active text-warning" id="hold-tab" data-bs-toggle="tab"
-                            data-bs-target="#hold" type="button" role="tab"><i
-                                class="fas fa-piggy-bank me-1"></i>Holds</button>
-                    </li>
-                    <li class="nav-item" role="presentation">
-                        <button class="nav-link text-info" id="flip-tab" data-bs-toggle="tab" data-bs-target="#flip"
-                            type="button" role="tab"><i class="fas fa-exchange-alt me-1"></i>Flips</button>
-                    </li>
-                    <li class="nav-item" role="presentation">
-                        <button class="nav-link text-success" id="shuffle-tab" data-bs-toggle="tab"
-                            data-bs-target="#shuffle" type="button" role="tab"><i
-                                class="fas fa-recycle me-1"></i>Shuffles</button>
-                    </li>
-                </ul>
-            </div>
-            <div class="card-body p-0">
-                <div class="tab-content" id="investmentTabsContent">
-                    <!-- Long Term Holds -->
-                    <div class="tab-pane fade show active" id="hold" role="tabpanel">
-                        <div class="list-group list-group-flush">
-                            {% for inv in investments.bank_tab %}
-                            <div class="list-group-item bg-dark text-white border-secondary">
-                                <div class="d-flex w-100 justify-content-between">
-                                    <h6 class="mb-1 text-warning">{{ inv.item }}</h6>
-                                    {% if inv.recommendation == 'BUY' %}
-                                    <span class="badge bg-success">BUY</span>
-                                    {% else %}
-                                    <span class="badge bg-info">HOLD</span>
-                                    {% endif %}
-                                </div>
-                                <p class="mb-1 small">{{ inv.reason }}</p>
-                                <small class="text-muted">Price: {{ inv.current_price }}g (Avg: {{ inv.avg_price
-                                    }}g)</small>
-                            </div>
-                            {% endfor %}
-                        </div>
-                    </div>
-
-                    <!-- Flipping -->
-                    <div class="tab-pane fade" id="flip" role="tabpanel">
-                        <div class="list-group list-group-flush">
-                            {% for flip in investments.flipping %}
-                            <div class="list-group-item bg-dark text-white border-secondary">
-                                <div class="d-flex w-100 justify-content-between">
-                                    <h6 class="mb-1 text-info">{{ flip.item }}</h6>
-                                    <span class="badge bg-success">+{{ flip.profit_per }}g/ea</span>
-                                </div>
-                                <p class="mb-1 small">{{ flip.reason }}</p>
-                                <small class="text-muted">Buy: {{ flip.buy_price }}g | Sell: {{ flip.market_price
-                                    }}g</small>
-                            </div>
-                            {% endfor %}
-                        </div>
-                    </div>
-
-                    <!-- Shuffles -->
-                    <div class="tab-pane fade" id="shuffle" role="tabpanel">
-                        <div class="list-group list-group-flush">
-                            {% for shuf in investments.vendor_shuffles %}
-                            <div class="list-group-item bg-dark text-white border-secondary">
-                                <div class="d-flex w-100 justify-content-between">
-                                    <h6 class="mb-1 text-success">{{ shuf.item }}</h6>
-                                    <span class="badge bg-success">+{{ shuf.profit_per }}g</span>
-                                </div>
-                                <p class="mb-1 small">{{ shuf.notes }}</p>
-                                <small class="text-muted">Cost: {{ shuf.input_cost }}g | Vendor: {{ shuf.vendor_sell
-                                    }}g</small>
-                            </div>
-                            {% endfor %}
-                        </div>
-                    </div>
-                </div>
+        <div class="card bg-dark text-white border-secondary h-100">
+            <div class="card-body text-center d-flex flex-column justify-content-center">
+                <h5 class="card-title text-muted mb-2">Wealth Management</h5>
+                <p class="small text-muted mb-3">Gold Tracking, Investments, and Flipping are handled by GoblinStack.
+                </p>
+                <a href="http://localhost:8000" target="_blank" class="btn btn-sm btn-secondary">
+                    View Portfolio ↗
+                </a>
             </div>
         </div>
     </div>
@@ -167,7 +62,7 @@
 
 <div class="row">
     <!-- Crafting Opportunities -->
-    <div class="col-md-8 mb-4">
+    <div class="col-md-12 mb-4">
         <div class="card bg-dark text-white border-secondary">
             <div class="card-header d-flex justify-content-between align-items-center">
                 <h5 class="mb-0"><i class="fas fa-hammer me-2 text-primary"></i>Crafting Opportunities</h5>
@@ -211,32 +106,6 @@
                         {% endfor %}
                     </tbody>
                 </table>
-            </div>
-        </div>
-    </div>
-
-    <!-- Sniper Hits -->
-    <div class="col-md-4 mb-4">
-        <div class="card bg-dark text-white border-danger">
-            <div class="card-header">
-                <h5 class="mb-0"><i class="fas fa-crosshairs me-2 text-danger"></i>Sniper Hits</h5>
-            </div>
-            <div class="list-group list-group-flush">
-                {% if sniper %}
-                {% for hit in sniper %}
-                <div class="list-group-item bg-dark text-white border-secondary">
-                    <div class="d-flex w-100 justify-content-between">
-                        <h6 class="mb-1 text-danger">{{ hit.item }}</h6>
-                        <span class="badge bg-danger">+{{ hit.potential_profit }}g</span>
-                    </div>
-                    <small class="text-muted">Buy: {{ hit.listed_price }}g | Market: {{ hit.market_value }}g</small>
-                </div>
-                {% endfor %}
-                {% else %}
-                <div class="list-group-item bg-dark text-white text-center py-4">
-                    <p class="mb-0 text-muted">No sniper hits found.</p>
-                </div>
-                {% endif %}
             </div>
         </div>
     </div>

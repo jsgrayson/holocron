@@ -150,120 +150,6 @@ class GoblinEngine:
             else:
                 return "Avoid (Low Vol/Low Profit)"
 
-    def get_sniper_list(self) -> List[Dict]:
-        """Identify items posted significantly below market value"""
-        # Mock sniper logic - in real app would compare live listings to DB avg
-        sniper_hits = []
-        
-        # Simulate finding a cheap listing
-        sniper_hits.append({
-            "item": "Draconium Ore",
-            "listed_price": 25,
-            "market_value": 45,
-            "potential_profit": 18, # (45*0.95) - 25
-            "confidence": "High"
-        })
-        
-        return sniper_hits
-
-class GoldTracker:
-    """Tracks gold income over time"""
-    def __init__(self):
-        self.history = [] # List of (date, amount)
-        
-    def get_benchmark(self, period: str) -> Dict:
-        """Get income for a specific period"""
-        # Mock data
-        if period == 'day':
-            return {"income": 1250, "change": "+5%"}
-        elif period == 'week':
-            return {"income": 15400, "change": "+12%"}
-        elif period == 'month':
-            return {"income": 62000, "change": "-3%"}
-        return {"income": 0, "change": "0%"}
-        
-    def get_history(self) -> List[Dict]:
-        """Get gold history for graphing"""
-        # Mock 7-day history
-        return [
-            {"day": "Mon", "gold": 124000},
-            {"day": "Tue", "gold": 128000}, # Reset day spike
-            {"day": "Wed", "gold": 131000},
-            {"day": "Thu", "gold": 132500},
-            {"day": "Fri", "gold": 133000},
-            {"day": "Sat", "gold": 138000}, # Weekend sales
-            {"day": "Sun", "gold": 142000},
-        ]
-
-class InvestmentAdvisor:
-    """Recommends items to buy, hold, flip, or shuffle"""
-    
-    def get_recommendations(self) -> Dict[str, List[Dict]]:
-        """Get all investment recommendations categorized"""
-        return {
-            "bank_tab": self._get_long_term_holds(),
-            "flipping": self._get_flipping_candidates(),
-            "vendor_shuffles": self._get_vendor_shuffles()
-        }
-
-    def _get_long_term_holds(self) -> List[Dict]:
-        """Identify items with high long-term value (Bank Tab)"""
-        return [
-            {
-                "item": "Draconium Ore",
-                "current_price": 45,
-                "avg_price": 55,
-                "recommendation": "BUY",
-                "reason": "20% below monthly average. Reset day demand expected.",
-                "confidence": "High"
-            },
-            {
-                "item": "Awakened Order",
-                "current_price": 150,
-                "avg_price": 145,
-                "recommendation": "HOLD",
-                "reason": "Price stable. Wait for raid release spike.",
-                "confidence": "Medium"
-            }
-        ]
-
-    def _get_flipping_candidates(self) -> List[Dict]:
-        """Identify short-term flip opportunities"""
-        return [
-            {
-                "item": "Khaz Algar Herb",
-                "buy_price": 20,
-                "market_price": 25,
-                "profit_per": 4, # After 5% cut
-                "volume": "High",
-                "reason": "Posted below vendor floor (bot dump?)"
-            }
-        ]
-
-    def _get_vendor_shuffles(self) -> List[Dict]:
-        """Identify craft-to-vendor loops"""
-        return [
-            {
-                "item": "Spool of Wildercloth",
-                "input_cost": 1.5, # 5 cloth @ 0.3g
-                "vendor_sell": 2.1,
-                "profit_per": 0.6,
-                "notes": "Requires Tailoring 10. Infinite demand."
-            }
-        ]
-
-class GoblinScore:
-    """Gamification system for wealth accumulation"""
-    
-    TITLES = [
-        (0, "Street Peddler"),
-        (20, "Auction House Camper"),
-        (40, "Market Mover"),
-        (60, "Cartel Associate"),
-        (80, "Trade Prince"),
-        (95, "Goblin Gadgeteer")
-    ]
-    
     def calculate_score(self, weekly_income: int, profit_margin: int) -> Dict:
         """Calculate score based on metrics"""
         # Score components
@@ -296,20 +182,7 @@ class GoblinScore:
 class GoblinEngineExpanded(GoblinEngine):
     def __init__(self):
         super().__init__()
-        self.gold_tracker = GoldTracker()
-        self.investment_advisor = InvestmentAdvisor()
         self.goblin_score = GoblinScore()
-        
-    def get_gold_benchmarks(self) -> Dict:
-        return {
-            "day": self.gold_tracker.get_benchmark('day'),
-            "week": self.gold_tracker.get_benchmark('week'),
-            "month": self.gold_tracker.get_benchmark('month'),
-            "history": self.gold_tracker.get_history()
-        }
-        
-    def get_investments(self) -> Dict[str, List[Dict]]:
-        return self.investment_advisor.get_recommendations()
         
     def get_score(self) -> Dict:
         # Mock inputs for now
