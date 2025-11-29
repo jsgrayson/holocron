@@ -80,27 +80,58 @@ class BlizzardAPIClient:
         response.raise_for_status()
         return response.json()
 
-# Example usage (requires credentials)
+# Example usage
 if __name__ == "__main__":
-    # You'll need to create an app at https://develop.battle.net/
-    # and get your CLIENT_ID and CLIENT_SECRET
+    import os
+    from dotenv import load_dotenv
     
-    CLIENT_ID = "YOUR_CLIENT_ID"
-    CLIENT_SECRET = "YOUR_CLIENT_SECRET"
+    # Load credentials from .env
+    load_dotenv('/Users/jgrayson/Documents/petweaver/.env')
+    CLIENT_ID = os.getenv('BLIZZARD_CLIENT_ID')
+    CLIENT_SECRET = os.getenv('BLIZZARD_CLIENT_SECRET')
     
-    if CLIENT_ID == "YOUR_CLIENT_ID":
-        print("Please set your Blizzard API credentials first!")
-        print("1. Go to https://develop.battle.net/")
-        print("2. Create an application")
-        print("3. Get your Client ID and Secret")
-        print("4. Update this script with your credentials")
-    else:
-        client = BlizzardAPIClient(CLIENT_ID, CLIENT_SECRET)
-        
-        # Example: Get Nerub-ar Palace (instance ID 1273)
+    if not CLIENT_ID or not CLIENT_SECRET:
+        print("ERROR: Blizzard API credentials not found in .env file!")
+        exit(1)
+    
+    client = BlizzardAPIClient(CLIENT_ID, CLIENT_SECRET)
+    
+    # Test: Get Nerub-ar Palace (instance ID 1273)
+    print("\n" + "="*60)
+    print("Fetching Nerub-ar Palace instance data...")
+    print("="*60)
+    
+    try:
         instance = client.get_journal_instance(1273)
-        print(json.dumps(instance, indent=2))
+        print(f"\nInstance: {instance['name']}")
+        print(f"Encounters: {len(instance.get('encounters', []))}")
         
-        # Example: Get Queen Ansurek encounter (encounter ID 2922)
+        # Save full data
+        with open('/Users/jgrayson/Documents/holocron/data/nerub_ar_palace.json', 'w') as f:
+            json.dump(instance, f, indent=2)
+        print("\n✓ Saved to data/nerub_ar_palace.json")
+        
+    except Exception as e:
+        print(f"✗ Error: {e}")
+    
+    # Test: Get Queen Ansurek encounter (encounter ID 2922)
+    print("\n" + "="*60)
+    print("Fetching Queen Ansurek encounter...")
+    print("="*60)
+    
+    try:
         encounter = client.get_journal_encounter(2922)
-        print(json.dumps(encounter, indent=2))
+        print(f"\nBoss: {encounter['name']}")
+        print(f"Instance: {encounter['instance']['name']}")
+        
+        # Count abilities/sections
+        sections = encounter.get('sections', [])
+        print(f"Sections: {len(sections)}")
+        
+        # Save full data
+        with open('/Users/jgrayson/Documents/holocron/data/queen_ansurek.json', 'w') as f:
+            json.dump(encounter, f, indent=2)
+        print("\n✓ Saved to data/queen_ansurek.json")
+        
+    except Exception as e:
+        print(f"✗ Error: {e}")
