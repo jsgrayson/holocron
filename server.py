@@ -256,88 +256,68 @@ def navigator():
     return render_template('navigator.html', activities=activities)
 
 # --- PATHFINDER MODULE ---
-try:
-    import networkx as nx
-except ImportError:
-    nx = None
-    print("Warning: networkx not found. Pathfinder module disabled.")
+from pathfinder_engine import MockPathfinder
 
-def build_azeroth_graph():
-    """
-    Builds the graph of Azeroth from the database.
-    """
-    G = nx.DiGraph()
-    try:
-        conn = get_db_connection()
-        cur = conn.cursor()
-        
-        # 1. Add Zones (Nodes)
-        cur.execute("SELECT zone_id, name FROM pathfinder.zones")
-        for row in cur.fetchall():
-            G.add_node(row[0], name=row[1])
-            
-        # 2. Add Connections (Edges)
-        cur.execute("SELECT source_zone_id, dest_zone_id, travel_time_seconds FROM pathfinder.travel_nodes")
-        for row in cur.fetchall():
-            G.add_edge(row[0], row[1], weight=row[2])
-            
-        cur.close()
-        conn.close()
-    except Exception as e:
-        print(f"Graph build error: {e}")
-    return G
+# Initialize Pathfinder engine once
+pathfinder_engine = MockPathfinder()
+pathfinder_engine.build_mock_graph()
 
-@app.route('/api/distance')
-def calculate_distance():
+@app.route('/api/pathfinder/route')
+def pathfinder_route():
     """
-    Calculates the shortest path between two zones.
-    Query Params: from (zone_id), to (zone_id)
+    Calculate shortest travel route between zones
+    Query params:
+        source (int): Source zone ID
+        dest (int): Destination zone ID
+        char_class (str): Optional character class (Mage, Engineer, Druid)
+        hearthstone (bool): Whether hearthstone is available
     """
-    source = request.args.get('from', type=int)
-    target = request.args.get('to', type=int)
+    source = request.args.get('source', type=int)
+    dest = request.args.get('dest', type=int)
+    char_class = request.args.get('char_class', None)
+    hearthstone = request.args.get('hearthstone', 'true').lower() == 'true'
     
-    if not source or not target:
-        return jsonify({"error": "Missing 'from' or 'to' parameters"}), 400
-        
-    G = build_azeroth_graph()
+    if not source or not dest:
+        return jsonify({"error": "Missing 'source' or 'dest' parameters"}), 400
     
-    try:
-        path = nx.shortest_path(G, source=source, target=target, weight='weight')
-        distance = nx.shortest_path_length(G, source=source, target=target, weight='weight')
-        
-        # Convert path IDs to Names
-        path_names = []
-        for node_id in path:
-            path_names.append(G.nodes[node_id].get('name', str(node_id)))
-            
-        return jsonify({
-            "source": source,
-            "target": target,
-            "path": path_names,
-            "travel_time_seconds": distance,
-            "travel_time_formatted": f"{distance // 60}m {distance % 60}s"
-        })
-    except nx.NetworkXNoPath:
-        return jsonify({"error": "No path found between these zones"}), 404
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    result = pathfinder_engine.find_shortest_path(
+        source, dest,
+        character_class=char_class,
+        hearthstone_available=hearthstone
+    )
+    
+    return jsonify(result)
+
+@app.route('/api/pathfinder/reachable')
+def pathfinder_reachable():
+    """
+    Get all zones reachable from a source within max_time
+    Query params:
+        source (int): Source zone ID
+        max_time (int): Maximum travel time in seconds (default: 120)
+    """
+    source = request.args.get('source', type=int)
+    max_time = request.args.get('max_time', 120, type=int)
+    
+    if not source:
+        return jsonify({"error": "Missing 'source' parameter"}), 400
+    
+    reachable = pathfinder_engine.get_reachable_zones(source, max_time)
+    return jsonify({"source": source, "max_time": max_time, "reachable": reachable})
 
 @app.route('/pathfinder')
 def pathfinder():
-    # Mock Matrix Data for MVP
-    matrix = [
-        {
-            "name": "MainMage", "zone": "Valdrakken", 
-            "hs_ready": True, "dalaran_ready": True, "garrison_ready": False, "garrison_cd": "12m", "wormhole_ready": True
-        },
-        {
-            "name": "AltDruid", "zone": "Oribos", 
-            "hs_ready": False, "hs_cd": "5m", "dalaran_ready": True, "garrison_ready": True, "wormhole_ready": False, "wormhole_cd": "4h"
-        }
+    # Get list of zones for dropdowns
+    zones = [
+        {"id": 84, "name": "Stormwind City"},
+        {"id": 85, "name": "Orgrimmar"},
+        {"id": 1670, "name": "Oribos"},
+        {"id": 2112, "name": "Valdrakken"},
+        {"id": 2339, "name": "Dornogal"},
+        {"id": 1220, "name": "Legion Dalaran"},
+        {"id": 125, "name": "Dalaran (Northrend)"},
     ]
-    return render_template('pathfinder.html', matrix=matrix)
-
-    return render_template('pathfinder.html', matrix=matrix)
+    return render_template('pathfinder.html', zones=zones)
 
 # --- CODEX MODULE ---
 
