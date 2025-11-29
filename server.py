@@ -539,6 +539,25 @@ def vault():
     status = vault_engine.get_status()
     return render_template('vault.html', status=status)
 
+# --- THE SCOUT MODULE ---
+from scout_engine import ScoutEngine, EventType
+
+# Initialize Scout engine once
+scout_engine = ScoutEngine()
+scout_engine.load_mock_data()
+
+@app.route('/api/scout/alerts')
+def scout_alerts():
+    """Get active push alerts"""
+    alerts = scout_engine.get_alerts()
+    return jsonify({"alerts": alerts})
+
+@app.route('/scout')
+def scout():
+    """The Scout UI - Push Alerts"""
+    alerts = scout_engine.get_alerts()
+    return render_template('scout.html', alerts=alerts)
+
 def fetch_campaigns():
     """
     Load campaign definitions from the database with a light fallback.
