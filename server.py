@@ -390,6 +390,48 @@ def knowledge():
                           profession="Blacksmithing",
                           checklist=checklist)
 
+# --- UTILITY TRACKER ---
+from utility_tracker import UtilityTracker, CollectionType
+
+# Initialize Utility tracker once
+utility_tracker = UtilityTracker()
+utility_tracker.load_mock_data()
+
+@app.route('/api/utility/summary')
+def utility_summary():
+    """Get collection summary (mounts, toys, spells)"""
+    summary = utility_tracker.get_summary()
+    return jsonify(summary)
+
+@app.route('/api/utility/missing')
+def utility_missing():
+    """
+    Get missing items for a collection type
+    Query params:
+        type (str): Collection type (mount, toy, spell)
+        limit (int): Max items to return (default: 10)
+    """
+    collection_type_str = request.args.get('type', 'mount').upper()
+    limit = request.args.get('limit', 10, type=int)
+    
+    try:
+        collection_type = CollectionType[collection_type_str]
+    except KeyError:
+        return jsonify({"error": f"Invalid collection type: {collection_type_str}"}), 400
+    
+    missing = utility_tracker.get_missing_items(collection_type, limit)
+    return jsonify({"type": collection_type.value, "missing": missing})
+
+@app.route('/utility')
+def utility():
+    """Utility Tracker UI"""
+    summary = utility_tracker.get_summary()
+    missing_mounts = utility_tracker.get_missing_items(CollectionType.MOUNT, 5)
+    
+    return render_template('utility.html',
+                          summary=summary,
+                          missing_mounts=missing_mounts)
+
 # --- CODEX MODULE ---
 
 def fetch_campaigns():
