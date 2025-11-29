@@ -681,54 +681,65 @@ def codex_blocker():
     })
 
 # --- DIPLOMAT MODULE ---
+from diplomat_engine import DiplomatEngine
+
+# Initialize Diplomat engine once
+diplomat_engine = DiplomatEngine()
+diplomat_engine.load_mock_data()
+
+@app.route('/api/diplomat/opportunities')
+def diplomat_opportunities():
+    """
+    Get Paragon opportunities and recommended WQs
+    Returns factions >80% to next reward with efficiency-ranked quests
+    """
+    recommendations = diplomat_engine.generate_recommendations()
+    return jsonify(recommendations)
+
+@app.route('/api/diplomat/quests')
+def diplomat_quests():
+    """
+    Get recommended WQs for a specific faction
+    Query param: faction_id (int)
+    """
+    faction_id = request.args.get('faction_id', type=int)
+    if not faction_id:
+        return jsonify({"error": "Missing 'faction_id' parameter"}), 400
+    
+    quests = diplomat_engine.get_recommended_quests(faction_id)
+    return jsonify({"faction_id": faction_id, "quests": quests})
 
 @app.route('/diplomat')
 def diplomat():
-    factions_data = []
-    sniper_list = []
+    """Diplomat UI page"""
+    # Get all data from engine
+    recommendations = diplomat_engine.generate_recommendations()
     
-    try:
-        conn = get_db_connection()
-        cur = conn.cursor()
-        
-        # 1. Get Faction Status (Mocked for MVP if no data)
-        # In a real scenario, we'd join diplomat.reputation_status with factions
-        # For now, let's return the static factions with mock progress
-        cur.execute("SELECT faction_id, name, paragon_threshold FROM diplomat.factions")
-        rows = cur.fetchall()
-        
-        for row in rows:
-            f_id = row[0]
-            name = row[1]
-            threshold = row[2]
-            
-            # Mock Progress
-            current_val = 8500 if f_id == 2600 else 2000 # Dornogal is close
-            percent = int((current_val / threshold) * 100)
-            
-            factions_data.append({
-                "name": name,
-                "current": current_val,
-                "max": threshold,
-                "percent": percent,
-                "is_close": percent > 80
+    # Format for template
+    factions_data = []
+    for opp in recommendations['opportunities']:
+        factions_data.append({
+            "name": opp['faction_name'],
+            "current": opp['current'],
+            "max": opp['max'],
+            "percent": opp['percent'],
+            "is_close": opp['percent'] >= 80,
+            "priority": opp['priority']
+        })
+    
+    # Get top WQ recommendations
+    sniper_list = []
+    for opp in recommendations['opportunities']:
+        for quest in opp.get('recommended_quests', [])[:3]:  # Top 3 per faction
+            sniper_list.append({
+                "faction": opp['faction_name'],
+                "quest": quest['title'],
+                "zone": quest['zone'],
+                "reward": f"{quest['rep_reward']} Rep",
+                "efficiency": f"{quest['efficiency']} rep/min ({quest['efficiency_score']})",
+                "gold": f"{quest['gold']}g"
             })
-            
-            # 2. Generate Sniper Recommendations (Mock)
-            if percent > 80:
-                sniper_list.append({
-                    "quest": "Protect the Core",
-                    "zone": "Isle of Dorn",
-                    "reward": "250 Rep",
-                    "efficiency": "High (Kill Quest)",
-                    "assigned_char": "MainMage"
-                })
-
-        cur.close()
-        conn.close()
-    except Exception as e:
-        print(f"Diplomat error: {e}")
-
+    
     return render_template('diplomat.html', factions=factions_data, sniper=sniper_list)
 
 @app.route('/upload', methods=['POST'])
