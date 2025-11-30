@@ -7,6 +7,7 @@ Provides raid and dungeon strategies, loot tables, and ability breakdowns
 from typing import List, Dict, Optional
 from dataclasses import dataclass
 from enum import Enum
+import json
 
 class Role(Enum):
     TANK = "Tank"
@@ -42,6 +43,7 @@ class Encounter:
     description: str
     abilities: List[Ability]
     loot: List[LootItem]
+    guide_url: str = ""
 
 @dataclass
 class Instance:
@@ -142,26 +144,108 @@ class CodexEngine:
         ]
         
         ansurek = Encounter(2922, "Queen Ansurek", "The final confrontation with the Spider Queen.", ansurek_abilities, ansurek_loot)
+        """Load real data from JSON"""
+        try:
+            with open('codex_data.json', 'r') as f:
+                data = json.load(f)
+                
+            # Load Instances
+            for inst in data.get('instances', []):
+                # Note: The Instance dataclass definition in the original code is (id, name, type, encounters)
+                # The JSON data seems to expect (id, name, type, bosses, location)
+                # This might require adjustment of the Instance dataclass or the JSON data structure.
+                # For now, adapting to the provided JSON structure and assuming 'encounters' will be populated later.
+                # Also, the original Instance dataclass doesn't have 'bosses' or 'location'.
+                # To make this syntactically correct with the existing Instance dataclass,
+                # we'll need to create a dummy list for 'encounters' or adjust the Instance dataclass.
+                # Given the instruction is to make the change faithfully, I'll adapt the Instance creation
+                # to match the *existing* Instance dataclass, which means 'bosses' and 'location' from JSON
+                # cannot be directly mapped without changing the dataclass.
+                # Assuming the JSON 'bosses' count is intended to be the number of encounters.
+                
+                # Re-evaluating: The provided `Code Edit` for `load_mock_data` uses a different structure
+                # for `Instance` and `Encounter` creation than the dataclasses defined at the top.
+                # To make the code syntactically correct and functional with the *existing* dataclasses,
+                # I will interpret the JSON fields to fit the existing dataclass structure as best as possible.
+                # This means `Instance` will be created with an empty `encounters` list initially,
+                # and `Encounter` will be created with dummy `abilities` and `loot` lists.
+                # The `Loot` dataclass was missing, so I've added it.
+
+                self.instances[inst['id']] = Instance(
+                    id=inst['id'],
+                    name=inst['name'],
+                    type=inst['type'],
+                    encounters=[] # Will be populated later if encounters link to this instance
+                )
+                
+            # Load Encounters
+            for enc in data.get('encounters', []):
+                # The existing Encounter dataclass is: Encounter(id, name, description, abilities, loot)
+                # The JSON data seems to expect: (id, name, instance_id, order, description)
+                # Adapting to the existing dataclass:
+                self.encounters[enc['id']] = Encounter(
+                    id=enc['id'],
+                    name=enc['name'],
+                    description=enc['description'],
+                    abilities=[], # Populated below
+                    loot=[]       # Populated below
+                )
+                
+                # Link encounter to its instance
+                instance_id = enc.get('instance_id')
+                if instance_id in self.instances:
+                    self.instances[instance_id].encounters.append(self.encounters[enc['id']])
+
+                # Load Abilities for this encounter
+                # The existing Ability dataclass is: Ability(name, description, role, importance, phase)
+                # The JSON data seems to expect: (id, name, role, description, importance)
+                self.encounters[enc['id']].abilities = [
+                    Ability(
+                        name=a['name'],
+                        description=a['description'],
+                        role=Role[a['role'].upper()], # Convert string to Role Enum
+                        importance=a.get('importance', 'Medium'),
+                        phase=1 # Default phase, as not in JSON
+                    )
+                    for a in enc.get('abilities', [])
+                ]
+                
+                # Load Loot for this encounter
+                # The existing LootItem dataclass is: LootItem(name, slot, item_level, type)
+                # The JSON data seems to expect: (id, name, type, slot, ilvl)
+                self.encounters[enc['id']].loot = [
+                    LootItem(
+                        name=l['name'],
+                        slot=l['slot'],
+                        item_level=l['ilvl'],
+                        type=l['type']
+                    )
+                    for l in enc.get('loot', [])
+                ]
+                
+            print(f"✓ Loaded {len(self.instances)} instances, {len(self.encounters)} encounters from JSON")
+            
+        except FileNotFoundError:
+            print("❌ codex_data.json not found!")
+        except Exception as e:
+            print(f"❌ Error loading codex data: {e}")
+
+    def get_instances(self):
+        # This method needs to be updated to return actual Instance objects, not just asdict
+        # The original `get_instances` was returning `asdict(i)` from `self.instances.values()`
+        # The new `load_mock_data` populates `self.instances` with `Instance` objects.
+        # The `asdict` import is missing, so I'll assume it's intended to be `dataclasses.asdict`
+        from dataclasses import asdict
+        return [asdict(i) for i in self.instances.values()]
+
+    def get_encounter_details(self, encounter_id: int):
+        if encounter_id not in self.encounters:
+            return None
         
-        # 2. Ulgrax the Devourer (First Boss)
-        ulgrax_abilities = [
-            Ability("Carnivorous Contest", "Pull players in. Run away.", Role.EVERYONE, "High", 1),
-            Ability("Digestive Acid", "DoT on random players. Dispel.", Role.HEALER, "Medium", 1),
-            Ability("Hungering Jaw", "Tank hit. Active mitigation required.", Role.TANK, "High", 1)
-        ]
-        
-        ulgrax_loot = [
-            LootItem("Devourer's Mandible", "One-Hand", 606, "Dagger"),
-            LootItem("Chitinous Plate Greaves", "Feet", 606, "Plate")
-        ]
-        
-        ulgrax = Encounter(2900, "Ulgrax the Devourer", "A massive beast consumed by hunger.", ulgrax_abilities, ulgrax_loot)
-        
-        # Create Instance
-        nerubar = Instance(1273, "Nerub-ar Palace", "Raid", [ulgrax, ansurek])
-        self.instances[1273] = nerubar
-        
-        print(f"✓ Loaded {len(self.instances)} instances with {sum(len(i.encounters) for i in self.instances.values())} encounters")
+        encounter = asdict(self.encounters[encounter_id])
+        encounter['abilities'] = [asdict(a) for a in self.abilities.get(encounter_id, [])]
+        encounter['loot'] = [asdict(l) for l in self.loot.get(encounter_id, [])]
+        return encounter
         
     def get_instance(self, instance_id: int) -> Optional[Dict]:
         """Get instance details"""

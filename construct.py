@@ -5,7 +5,7 @@ import time
 
 # Configuration
 WAKE_WORD = "holocron"
-SERVER_URL = "http://localhost:5000"
+SERVER_URL = "http://localhost:5001"
 
 # Initialize TTS
 engine = pyttsx3.init()

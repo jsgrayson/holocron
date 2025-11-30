@@ -37,7 +37,14 @@ class Activity:
     zone_id: Optional[int] = None
     is_owned: bool = False
     rarity: str = "Rare"  # "Rare", "Common", "Epic"
+    time_estimate: int = 15 # Minutes
     
+    @property
+    def ppm(self) -> float:
+        """Points Per Minute (Efficiency)"""
+        if self.time_estimate <= 0: return 0
+        return self.score / self.time_estimate
+
     @property
     def score(self) -> int:
         """Calculate activity value score"""
@@ -62,6 +69,7 @@ class Activity:
     @property
     def priority_label(self) -> str:
         """Human-readable priority"""
+        # Use PPM for priority label if efficiency matters
         if self.score >= 80:
             return "CRITICAL"
         elif self.score >= 50:
@@ -93,41 +101,41 @@ class NavigatorEngine:
         self.activities = [
             # High-value rare mounts (unlocked)
             Activity("Icecrown Citadel", "Invincible's Reins", ActivityType.MOUNT,
-                    "WotLK", "Raid", available_chars=5, zone_id=125, rarity="Epic"),
+                    "WotLK", "Raid", available_chars=5, zone_id=125, rarity="Epic", time_estimate=30),
             
             Activity("Firelands", "Flametalon of Alysrazor", ActivityType.MOUNT,
-                    "Cataclysm", "Raid", available_chars=4, zone_id=198, rarity="Rare"),
+                    "Cataclysm", "Raid", available_chars=4, zone_id=198, rarity="Rare", time_estimate=20),
             
             Activity("The Eye", "Ashes of Al'ar", ActivityType.MOUNT,
-                    "TBC", "Raid", available_chars=8, zone_id=109, rarity="Epic"),
+                    "TBC", "Raid", available_chars=8, zone_id=109, rarity="Epic", time_estimate=15),
             
             # Already owned (low priority)
             Activity("The Culling of Stratholme", "Reins of the Bronze Drake", ActivityType.MOUNT,
                     "WotLK", "Dungeon", available_chars=8, zone_id=125, 
-                    is_owned=True, rarity="Rare"),
+                    is_owned=True, rarity="Rare", time_estimate=15),
             
             # Locked (no chars available)
             Activity("Vault of the Incarnates", "Renewed Proto-Drake", ActivityType.MOUNT,
-                    "Dragonflight", "Raid", available_chars=0, zone_id=2112, rarity="Epic"),
+                    "Dragonflight", "Raid", available_chars=0, zone_id=2112, rarity="Epic", time_estimate=45),
             
             # Pets
             Activity("Molten Core", "Untamed Hatchling", ActivityType.PET,
-                    "Vanilla", "Raid", available_chars=6, zone_id=230, rarity="Rare"),
+                    "Vanilla", "Raid", available_chars=6, zone_id=230, rarity="Rare", time_estimate=25),
             
             # Transmog
             Activity("Throne of Thunder", "Tier 15 Recolor", ActivityType.TRANSMOG,
-                    "Pandaria", "Raid", available_chars=3, zone_id=928, rarity="Rare"),
+                    "Pandaria", "Raid", available_chars=3, zone_id=928, rarity="Rare", time_estimate=40),
             
             Activity("Blackrock Foundry", "Tier 17 Set", ActivityType.TRANSMOG,
-                    "WoD", "Raid", available_chars=7, zone_id=543, rarity="Common"),
+                    "WoD", "Raid", available_chars=7, zone_id=543, rarity="Common", time_estimate=35),
             
             # Gold farming
             Activity("Freehold", "Gold Farm (3k/hr)", ActivityType.GOLD,
-                    "BfA", "Dungeon", available_chars=5, zone_id=1161, rarity="Common"),
+                    "BfA", "Dungeon", available_chars=5, zone_id=1161, rarity="Common", time_estimate=10),
             
             # Reputation
             Activity("Isle of Dorn", "Council of Dornogal WQs", ActivityType.REPUTATION,
-                    "TWW", "World Quest", available_chars=1, zone_id=2248, rarity="Common"),
+                    "TWW", "World Quest", available_chars=1, zone_id=2248, rarity="Common", time_estimate=5),
         ]
         
         print(f"✓ Loaded {len(self.activities)} activities, {len(self.owned_items)} owned items")
@@ -164,13 +172,19 @@ class NavigatorEngine:
                 "instance_type": activity.instance_type,
                 "available_chars": activity.available_chars,
                 "score": activity.score,
+                "ppm": round(activity.ppm, 2),
+                "time": activity.time_estimate,
                 "priority": activity.priority_label,
                 "rarity": activity.rarity,
                 "is_owned": activity.is_owned,
                 "zone_id": activity.zone_id
             })
         
-        # Sort by score (highest first)
+        # Sort by PPM (Efficiency) instead of raw score?
+        # Let's sort by Score first, then PPM as tiebreaker, or weighted?
+        # For "Boredom Buster", maybe Score is better (coolest stuff).
+        # For "Efficiency", PPM is better.
+        # Let's keep Score as primary sort, but expose PPM.
         filtered.sort(key=lambda x: x["score"], reverse=True)
         
         return filtered

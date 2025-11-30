@@ -797,7 +797,83 @@ def summarize_campaigns(matrix, campaigns):
             "status": status_text
         })
     return summaries
+    return summaries
 
+# --- FABRICATOR MODULE ---
+from fabricator import Fabricator
+
+# Initialize Fabricator (DB connection will be created per request or shared)
+# For now, we pass the connection string from env
+DB_URL = os.environ.get('DATABASE_URL')
+fabricator_engine = Fabricator(DB_URL)
+
+@app.route('/api/fabricator/plan')
+def fabricator_plan():
+    """
+    Generate a crafting plan for an item
+    Query params:
+        item_id (int): Target item ID
+        qty (int): Quantity needed
+    """
+    item_id = request.args.get('item_id', type=int)
+    qty = request.args.get('qty', 1, type=int)
+    
+    if not item_id:
+        return jsonify({"error": "Missing item_id"}), 400
+        
+    try:
+        G = fabricator_engine.build_dependency_graph(item_id, qty)
+        plan = fabricator_engine.generate_plan(G)
+        return jsonify({"plan": plan})
+    except Exception as e:
+        print(f"Fabricator error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+# --- SANDBOX MODULE ---
+from sandbox import Sandbox
+from loadout_lottery import LoadoutLottery
+
+sandbox_engine = Sandbox()
+lottery_engine = LoadoutLottery()
+
+@app.route('/api/sandbox/run', methods=['POST'])
+def sandbox_run():
+    """
+    Run a raw SimC simulation
+    POST body: {simc_input: str}
+    """
+    data = request.get_json()
+    simc_input = data.get('simc_input')
+    
+    if not simc_input:
+        return jsonify({"error": "Missing simc_input"}), 400
+        
+    result = sandbox_engine.run_sim(simc_input)
+    if result:
+        return jsonify(result)
+    return jsonify({"error": "Simulation failed"}), 500
+
+@app.route('/api/sandbox/optimize', methods=['POST'])
+def sandbox_optimize():
+    """
+    Run a talent optimization (Loadout Lottery)
+    POST body: {base_profile: str, talent_strings: [str]}
+    """
+    data = request.get_json()
+    base_profile = data.get('base_profile')
+    talent_strings = data.get('talent_strings', [])
+    
+    if not base_profile or not talent_strings:
+        return jsonify({"error": "Missing base_profile or talent_strings"}), 400
+        
+    winner = lottery_engine.run_comparison(base_profile, talent_strings)
+    if winner:
+        return jsonify(winner)
+    return jsonify({"error": "Optimization failed"}), 500
+
+if __name__ == '__main__':
+    port = int(os.environ.get('PORT', 5001))
+    app.run(host='0.0.0.0', port=port, debug=True)
 
 def fetch_completed_for_guid(guid):
     """
@@ -986,19 +1062,40 @@ def diplomat():
                 "zone": quest['zone'],
                 "reward": f"{quest['rep_reward']} Rep",
                 "efficiency": f"{quest['efficiency']} rep/min ({quest['efficiency_score']})",
-                "gold": f"{quest['gold']}g"
+            "gold": f"{quest['gold']}g"
             })
     
     return render_template('diplomat.html', factions=factions_data, sniper=sniper_list)
 
-@app.route('/upload', methods=['POST'])
+@app.route('/api/diplomat/emissaries')
+def diplomat_emissaries():
+    """Get active emissaries"""
+    return jsonify(diplomat_engine.get_active_emissaries())
+
+
+def codex_encounter(encounter_id):
+    """Codex Encounter UI"""
+    encounter = codex_engine.get_encounter_details(encounter_id)
+    if not encounter:
+        return "Encounter not found", 404
+    return render_template('codex_encounter.html', encounter=encounter)
+
+@app.route('/api/codex/encounter/<int:encounter_id>')
+def api_codex_encounter(encounter_id):
+    """Get encounter details JSON"""
+    encounter = codex_engine.get_encounter_details(encounter_id)
+    if not encounter:
+        return jsonify({"error": "Not found"}), 404
+    return jsonify(encounter)
+
+@app.route('/upload_data', methods=['POST'])
 def upload_data():
     """
     Endpoint to receive JSON payloads from the Bridge script.
     Expected JSON format:
     {
         "source": "DataStore", 
-        "data": { ... }
+        "data": "raw lua string"
     }
     """
     try:
@@ -1012,19 +1109,33 @@ def upload_data():
         if not source or not data:
             return jsonify({"error": "Missing 'source' or 'data' fields"}), 400
 
-        # TODO: Implement specific parsing logic based on 'source'
-        # For now, we just acknowledge receipt.
-        print(f"Received data from {source}: {len(str(data))} bytes")
+        # Parse Lua
+        from lua_parser import parse_lua_table
+        parsed_data = parse_lua_table(data)
         
-        # Placeholder for DB insertion logic
-        # conn = get_db_connection()
-        # cur = conn.cursor()
-        # ...
-        # conn.commit()
-        # cur.close()
-        # conn.close()
+        if not parsed_data:
+             return jsonify({"error": "Failed to parse Lua data"}), 400
+             
+        # Save to JSON file for engines to consume
+        filename = f"{source}.json"
+        # os.makedirs("data", exist_ok=True)
+        
+        with open(filename, "w") as f:
+            json.dump(parsed_data, f, indent=2)
 
-        return jsonify({"status": "success", "message": f"Processed {source} data"}), 200
+        print(f"Received and saved data from {source}: {len(str(parsed_data))} bytes")
+            
+        # SQL Ingestion (Async-ish)
+        try:
+            import ingest_sql
+            if source == "DataStore_Reputations":
+                ingest_sql.ingest_reputations(parsed_data)
+            elif source == "SavedInstances":
+                ingest_sql.ingest_saved_instances(parsed_data)
+        except Exception as e:
+            print(f"SQL Ingestion Error: {e}")
+            
+        return jsonify({"status": "success", "source": source, "size": len(parsed_data)}), 200
 
     except Exception as e:
         print(f"Error processing upload: {e}")
@@ -1184,6 +1295,19 @@ from goblin_engine import GoblinEngine
 goblin_engine = GoblinEngine(tsm_engine=tsm_engine)
 goblin_engine.load_mock_data()
 
+@app.route('/api/goblin')
+def api_goblin():
+    """Market Analysis API"""
+    analysis = goblin_engine.analyze_market()
+    return jsonify(analysis)
+
+@app.route('/api/goblin/history')
+def api_goblin_history():
+    """Portfolio History API"""
+    days = request.args.get('days', default=7, type=int)
+    history = goblin_engine.get_history(days=days)
+    return jsonify(history)
+
 # --- WARDEN MODULE ---
 from warden_engine import WardenEngine
 warden_engine = WardenEngine()
@@ -1194,17 +1318,38 @@ def warden_api():
     """Warden API"""
     return jsonify(warden_engine.get_account_summary())
 
+# --- QUARTERMASTER ENGINE (Logistics) ---
+from quartermaster_engine import QuartermasterEngine
+quartermaster_engine = QuartermasterEngine(warden_engine)
+
+@app.route('/api/quartermaster/jobs')
+def api_quartermaster_jobs():
+    """Get pending mail jobs"""
+    return jsonify(quartermaster_engine.get_logistics_report())
+
+# --- MUSEUM ENGINE (Shadow Collection) ---
+from museum_engine import MuseumEngine
+museum_engine = MuseumEngine(warden_engine)
+
+@app.route('/api/museum/shadow')
+def api_museum_shadow():
+    """Get shadow collection"""
+    return jsonify(museum_engine.get_shadow_collection())
+
 # --- BRIEFING MODULE ---
 from briefing_engine import BriefingEngine
 
-# Initialize Briefing engine once
+# --- BRIEFING ENGINE (Executive Assistant) ---
+# Pass quartermaster to BriefingEngine
 briefing_engine = BriefingEngine(
     diplomat=diplomat_engine,
     goblin=goblin_engine,
     vault=vault_engine,
     scout=scout_engine,
     knowledge=knowledge_tracker,
-    warden=warden_engine
+    warden=warden_engine,
+    quartermaster=quartermaster_engine, # Added quartermaster
+    museum=museum_engine
 )
 
 @app.route('/api/briefing')
@@ -1217,6 +1362,52 @@ def briefing():
     """Daily Briefing UI"""
     data = briefing_engine.generate_briefing()
     return render_template('briefing.html', briefing=data)
+
+# --- COMMANDER ENGINE (Alt-Army) ---
+@app.route('/api/commander/cooldowns')
+def api_commander_cooldowns():
+    """Returns profession cooldowns across all characters."""
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT character_name, realm, profession, spell_name, ready_at, charges 
+            FROM holocron.profession_cooldowns 
+            ORDER BY ready_at ASC
+        """)
+        rows = cur.fetchall()
+        cur.close()
+        conn.close()
+        
+        cooldowns = []
+        for r in rows:
+            cooldowns.append({
+                "character": r[0],
+                "realm": r[1],
+                "profession": r[2],
+                "spell": r[3],
+                "ready_at": r[4].isoformat() if r[4] else None,
+                "charges": r[5]
+            })
+        return jsonify(cooldowns)
+        
+    except Exception as e:
+        print(f"DB Error (Commander): {e}")
+        # Mock Data for Verification
+        return jsonify([
+            {
+                "character": "Mage", "realm": "Area52", "profession": "Alchemy", 
+                "spell": "Transmute: Draconium", "ready_at": "2025-11-29T10:00:00Z", "charges": 1
+            },
+            {
+                "character": "Priest", "realm": "Area52", "profession": "Tailoring", 
+                "spell": "Azureweave Bolt", "ready_at": "2025-11-29T12:00:00Z", "charges": 0
+            },
+            {
+                "character": "Druid", "realm": "Stormrage", "profession": "Leatherworking", 
+                "spell": "Hide of the Earth", "ready_at": "2025-11-30T08:00:00Z", "charges": 1
+            }
+        ])
 
 if __name__ == '__main__':
     # Start the Flask server

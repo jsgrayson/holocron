@@ -12,7 +12,7 @@ from watchdog.events import FileSystemEventHandler
 # CONFIGURATION
 # TODO: User needs to set the correct Account Name
 WOW_SAVED_VARIABLES_PATH = "/Applications/World of Warcraft/_retail_/WTF/Account/YOUR_ACCOUNT_NAME_HERE/SavedVariables"
-SERVER_URL = "http://localhost:5000/upload"
+SERVER_URL = "http://localhost:5001/upload_data"
 
 class MirrorClient:
     def __init__(self, server_url, wtf_path):
@@ -123,6 +123,11 @@ class SavedVariablesHandler(FileSystemEventHandler):
 
         # Phase 8: DataStore_Reputations (Diplomat)
         elif filename == "DataStore_Reputations.lua":
+            print(f"Detected change in {filename}. Processing...")
+            self.process_lua_file(event.src_path, filename)
+
+        # Transmog
+        elif filename == "CanIMogIt.lua":
             print(f"Detected change in {filename}. Processing...")
             self.process_lua_file(event.src_path, filename)
 

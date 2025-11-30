@@ -13,13 +13,15 @@ class BriefingEngine:
     Aggregates data from other engines to generate a prioritized briefing.
     """
     
-    def __init__(self, diplomat, goblin, vault, scout, knowledge, warden):
-        self.diplomat = diplomat
-        self.goblin = goblin
-        self.vault = vault
+    def __init__(self, scout, diplomat, warden, vault, knowledge, goblin, quartermaster=None, museum=None):
         self.scout = scout
-        self.knowledge = knowledge
+        self.diplomat = diplomat
         self.warden = warden
+        self.vault = vault
+        self.knowledge = knowledge
+        self.goblin = goblin
+        self.quartermaster = quartermaster
+        self.museum = museum
         
     def generate_briefing(self) -> Dict[str, Any]:
         """
@@ -33,9 +35,11 @@ class BriefingEngine:
         summary = self._generate_executive_summary()
         print("DEBUG: Executive Summary Done")
         
-        # 2. Action Items (Prioritized)
-        print("DEBUG: Collecting Action Items...")
-        action_items = self._collect_action_items()
+        # 3. Collect Action Items
+        action_items = []
+        action_items.extend(self._collect_action_items())
+        action_items.extend(self._collect_logistics_items())
+        action_items.extend(self._collect_museum_items())
         print("DEBUG: Action Items Done")
         
         # 3. Market Opportunities
@@ -80,6 +84,26 @@ class BriefingEngine:
         """Aggregate and sort actionable items"""
         items = []
         
+        # Diplomat Emissaries
+        emissaries = self.diplomat.get_active_emissaries()
+        for emissary in emissaries:
+            if emissary['is_urgent'] or emissary['days_remaining'] <= 1:
+                items.append({
+                    "priority": "High",
+                    "source": "Diplomat",
+                    "text": f"Emissary Expiring: {emissary['title']} ({emissary['days_remaining']} day left)",
+                    "action": "Complete Now",
+                    "link": "/diplomat"
+                })
+            elif emissary['days_remaining'] <= 3:
+                items.append({
+                    "priority": "Medium",
+                    "source": "Diplomat",
+                    "text": f"Emissary Active: {emissary['title']}",
+                    "action": "Plan Route",
+                    "link": "/diplomat"
+                })
+
         # Scout Alerts (Critical)
         alerts = self.scout.get_alerts()
         for alert in alerts:
@@ -128,6 +152,38 @@ class BriefingEngine:
             
         return items
         
+    def _collect_logistics_items(self) -> List[Dict]:
+        """Collect logistics-related action items from Quartermaster."""
+        logistics_items = []
+        if self.quartermaster:
+            logistics_report = self.quartermaster.get_logistics_report()
+            if logistics_report['pending_jobs'] > 0:
+                for job in logistics_report['jobs']:
+                    logistics_items.append({
+                        "priority": "Medium",
+                        "source": "Quartermaster",
+                        "text": f"Logistics: Send {job['quantity']}x {job['item_name']} to {job['target']}",
+                        "action": "Fulfill Order",
+                        "link": "/quartermaster"
+                    })
+        return logistics_items
+
+    def _collect_museum_items(self) -> List[Dict]:
+        """Collect shadow collection items from Museum."""
+        museum_items = []
+        if self.museum:
+            report = self.museum.get_shadow_collection()
+            if report['total_items'] > 0:
+                for item in report['items']:
+                    museum_items.append({
+                        "priority": "Low",
+                        "source": "The Curator",
+                        "text": f"Shadow Collection: Found unlearned {item['type']} '{item['name']}' on {item['character']} ({item['location']})",
+                        "action": "Learn Item",
+                        "link": "/museum"
+                    })
+        return museum_items
+
     def _get_market_highlights(self) -> List[Dict]:
         """Top market moves"""
         analysis = self.goblin.analyze_market()

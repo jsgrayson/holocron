@@ -169,34 +169,67 @@
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script>
-        // Sample Chart
-        const ctx = document.getElementById('trendChart');
-        new Chart(ctx, {
-            type: 'line',
-            data: {
-                labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
-                datasets: [{
-                    label: 'Gold Earned',
-                    data: [12000, 15000, 13500, 18000, 19500, 22000, 25000],
-                    borderColor: '#ffd700',
-                    backgroundColor: 'rgba(255, 215, 0, 0.1)',
-                    tension: 0.4
-                }]
-            },
-            options: {
-                responsive: true,
-                plugins: { legend: { labels: { color: '#e0e0e0' } } },
-                scales: {
-                    y: { ticks: { color: '#e0e0e0' }, grid: { color: '#333' } },
-                    x: { ticks: { color: '#e0e0e0' }, grid: { color: '#333' } }
-                }
-            }
-        });
+        document.addEventListener('DOMContentLoaded', function () {
+            fetch('/api/goblin/history?days=7')
+                .then(response => response.json())
+                .then(data => {
+                    if (!data || data.length === 0) return;
 
-        // Sample data loading
-        document.getElementById('total-gold').textContent = '1,250,000g';
-        document.getElementById('active-auctions').textContent = '47';
-        document.getElementById('flips-today').textContent = '12';
+                    // Update Key Metrics from latest snapshot
+                    const latest = data[data.length - 1];
+                    document.getElementById('total-gold').textContent = latest.total_gold.toLocaleString() + 'g';
+                    document.getElementById('active-auctions').textContent = latest.active_auctions;
+                    document.getElementById('flips-today').textContent = latest.flips_today;
+
+                    // Prepare Chart Data
+                    const labels = data.map(d => {
+                        const date = new Date(d.timestamp);
+                        return date.toLocaleDateString('en-US', { weekday: 'short' });
+                    });
+                    const values = data.map(d => d.total_gold);
+
+                    // Render Chart
+                    const ctx = document.getElementById('trendChart');
+                    new Chart(ctx, {
+                        type: 'line',
+                        data: {
+                            labels: labels,
+                            datasets: [{
+                                label: 'Portfolio Value (Gold)',
+                                data: values,
+                                borderColor: '#ffd700',
+                                backgroundColor: 'rgba(255, 215, 0, 0.1)',
+                                tension: 0.4,
+                                fill: true
+                            }]
+                        },
+                        options: {
+                            responsive: true,
+                            plugins: {
+                                legend: { labels: { color: '#e0e0e0' } },
+                                tooltip: {
+                                    callbacks: {
+                                        label: function (context) {
+                                            return context.parsed.y.toLocaleString() + 'g';
+                                        }
+                                    }
+                                }
+                            },
+                            scales: {
+                                y: {
+                                    ticks: { color: '#e0e0e0' },
+                                    grid: { color: '#333' }
+                                },
+                                x: {
+                                    ticks: { color: '#e0e0e0' },
+                                    grid: { color: '#333' }
+                                }
+                            }
+                        }
+                    });
+                })
+                .catch(error => console.error('Error loading history:', error));
+        });
     </script>
 </body>
 

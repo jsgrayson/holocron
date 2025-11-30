@@ -24,9 +24,9 @@ PETWEAVER_PID=$!
 
 
 # 3. Start GoblinStack (FastAPI)
-echo "   Starting GoblinStack (Port 8000)..."
+echo "   Starting GoblinStack (Port 5004)..."
 cd /Users/jgrayson/Documents/goblin-clean-1
-python3 -m uvicorn backend.main:app --port 8000 > /tmp/goblin.log 2>&1 &
+python3 -m uvicorn backend.main:app --port 5004 > /tmp/goblin.log 2>&1 &
 GOBLIN_PID=$!
 echo "   ✅ GoblinStack started (PID: $GOBLIN_PID)"
 
@@ -41,7 +41,7 @@ echo "----------------------------------------"
 echo "� All systems operational!"
 echo "   - Holocron:   http://localhost:5001"
 echo "   - PetWeaver:  http://localhost:5002"
-echo "   - Goblin:     http://localhost:8000"
+echo "   - Goblin:     http://localhost:5004"
 if [ -n "$SKILL_PID" ]; then
     echo "   - SkillWeaver: http://localhost:3000"
 fi

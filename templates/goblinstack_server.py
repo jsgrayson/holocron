@@ -61,5 +61,5 @@ async def get_alerts():
     }
 
 if __name__ == "__main__":
-    print("🚀 Starting GoblinStack AI on http://127.0.0.1:8000")
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    print("🚀 Starting GoblinStack AI on http://127.0.0.1:5004")
+    uvicorn.run(app, host="0.0.0.0", port=5004)

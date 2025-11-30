@@ -68,16 +68,93 @@ class Profession(Enum):
     HERBALISM = "Herbalism"
     SKINNING = "Skinning"
 
+import json
+import os
+from datetime import datetime, timedelta
+
 class GoblinEngine:
     """
     Economic intelligence engine for market analysis and crafting optimization
     """
+    
+    HISTORY_FILE = "goblin_history.json"
     
     def __init__(self, tsm_engine=None):
         self.tsm_engine = tsm_engine
         self.prices = {}  # {item_id: ItemPrice}
         self.recipes = []
         self.items = []
+        self.history = self._load_history()
+        
+    def _load_history(self) -> List[Dict]:
+        if os.path.exists(self.HISTORY_FILE):
+            try:
+                with open(self.HISTORY_FILE, 'r') as f:
+                    return json.load(f)
+            except json.JSONDecodeError:
+                return []
+        return []
+
+    def record_snapshot(self):
+        """Records the current total value of the portfolio"""
+        total_value = 0
+        
+        # Calculate value of tracked items (using mock prices for now if TSM missing)
+        # In a real scenario, this would iterate over the Warden's inventory
+        # For now, we'll simulate a fluctuating portfolio value based on our mock items
+        
+        # Base value from mock items
+        base_value = 1250000 
+        
+        # Add some random fluctuation to simulate market changes
+        fluctuation = random.randint(-50000, 50000)
+        total_value = base_value + fluctuation
+        
+        snapshot = {
+            "timestamp": datetime.now().isoformat(),
+            "total_gold": total_value,
+            "active_auctions": 47 + random.randint(-5, 5),
+            "flips_today": 12 + random.randint(0, 5)
+        }
+        
+        self.history.append(snapshot)
+        
+        # Keep only last 30 days
+        if len(self.history) > 30:
+            self.history = self.history[-30:]
+            
+        with open(self.HISTORY_FILE, 'w') as f:
+            json.dump(self.history, f, indent=4)
+            
+        print(f"Recorded Snapshot: {total_value}g")
+
+    def get_history(self, days=7) -> List[Dict]:
+        """Returns the last N days of history"""
+        # If history is empty, generate some mock history for the demo
+        if not self.history:
+            self._generate_mock_history()
+            
+        return self.history[-days:]
+
+    def _generate_mock_history(self):
+        """Generates fake history for the past 7 days for visualization"""
+        base_value = 1200000
+        now = datetime.now()
+        
+        for i in range(7, 0, -1):
+            date = now - timedelta(days=i)
+            # Create a nice upward trend
+            daily_value = base_value + (i * 10000) + random.randint(-5000, 5000)
+            
+            self.history.append({
+                "timestamp": date.isoformat(),
+                "total_gold": daily_value,
+                "active_auctions": 40 + random.randint(0, 10),
+                "flips_today": 5 + random.randint(0, 10)
+            })
+        
+        self.record_snapshot() # Add today
+
         
     def load_mock_data(self):
         """Load mock market and recipe data"""

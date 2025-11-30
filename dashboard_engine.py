@@ -16,6 +16,7 @@ from utility_tracker import UtilityTracker
 from goblin_engine import GoblinEngine
 from codex_engine import CodexEngine
 from vault_engine import VaultEngine
+from commander_engine import CommanderEngine
 from scout_engine import ScoutEngine
 
 class DashboardEngine:
@@ -36,22 +37,39 @@ class DashboardEngine:
         self.codex = CodexEngine()
         self.vault = VaultEngine()
         self.scout = ScoutEngine()
+        self.commander = CommanderEngine()
         
         # Load mock data for all
         self._load_all_data()
         
     def _load_all_data(self):
-        """Load mock data for all engines"""
+        """Load data for all engines (Real if available, Mock fallback)"""
         print("Loading Holocron modules...")
-        self.pathfinder.load_mock_data()
-        self.diplomat.load_mock_data()
+        
+        # Pathfinder (DB based)
+        try:
+            self.pathfinder.build_graph()
+        except:
+            self.pathfinder.load_mock_data()
+        
+        # Load player state (SavedInstances)
+        self.pathfinder.load_real_data()
+            
+        # Diplomat (Reputations) - Supports Real Data
+        self.diplomat.load_real_data()
+        
+        # Utility (Collections) - Supports Real Data
+        self.utility.load_real_data()
+        
+        # Others (Mock for now)
         self.navigator.load_mock_data()
         self.knowledge.load_mock_data()
-        self.utility.load_mock_data()
         self.goblin.load_mock_data()
         self.codex.load_mock_data()
         self.vault.load_mock_data()
         self.scout.load_mock_data()
+        self.commander.load_mock_data()
+        
         print("✓ All modules loaded")
         
     def get_dashboard_summary(self) -> Dict[str, Any]:
@@ -138,7 +156,14 @@ class DashboardEngine:
             "next_alert": alerts[0]['event'] if alerts else "None"
         }
         
-        # 10. Diplomat Paragon Opportunities
+        # 10. Commander (Alt-Army)
+        ready_count = self.commander.get_ready_count()
+        commander_status = {
+            "ready_count": ready_count,
+            "next_ready": "1h 30m" # Mock for now
+        }
+        
+        # 11. Diplomat Paragon Opportunities
         try:
             diplomat_data = self.diplomat.get_opportunities()
             # Filter for high priority (>80%)
@@ -150,20 +175,36 @@ class DashboardEngine:
             print(f"Error fetching Diplomat data for paragon opportunities: {e}")
             paragon_opportunities = []
 
+        # Renaming for clarity based on the new structure
+        diplomat_recs = opps # Use the already fetched opportunities
+        utility_summary = summary # Use the already fetched utility summary
+
         return {
             "timestamp": datetime.datetime.now().strftime("%H:%M"),
-            "modules": {
-                "pathfinder": pathfinder_status,
-                "diplomat": diplomat_status,
-                "navigator": navigator_status,
-                "knowledge": knowledge_status,
-                "utility": utility_status,
-                "goblin": goblin_status,
-                "codex": codex_status,
-                "vault": vault_status,
-                "scout": scout_status,
-                "paragon_opportunities": paragon_opportunities
-            }
+            "pathfinder": {
+                "nodes": self.pathfinder.graph.number_of_nodes(),
+                "edges": self.pathfinder.graph.number_of_edges(),
+                "current_location": getattr(self.pathfinder, 'current_player_zone', 'Unknown')
+            },
+            "diplomat": {
+                "opportunities": len(diplomat_recs), # Use diplomat_recs directly, it's a list
+                "top_opportunity": diplomat_recs[0]["faction_name"] if diplomat_recs else "None"
+            },
+            "utility": {
+                "mounts": utility_summary["mounts"]["owned"],
+                "pets": utility_summary.get("pets", {}).get("owned", 0), # Handle missing key if old version
+                "transmog": utility_summary.get("transmog", {}).get("owned", 0),
+                "missing_easy": utility_summary["mounts"]["missing_by_difficulty"]["Easy"],
+                "overall_percent": utility_summary["overall"]["percent"]
+            },
+            "navigator": navigator_status,
+            "knowledge": knowledge_status,
+            "goblin": goblin_status,
+            "codex": codex_status,
+            "vault": vault_status,
+            "scout": scout_status,
+            "commander": commander_status,
+            "paragon_opportunities": paragon_opportunities
         }
 
 if __name__ == "__main__":
@@ -189,6 +230,7 @@ if __name__ == "__main__":
     print(f"📖 Codex:      {modules['codex']['current_raid']} ({modules['codex']['bosses']} bosses)")
     print(f"🏦 Vault:      {modules['vault']['unlocked']} Unlocked (Max: {modules['vault']['max_ilvl']} ilvl)")
     print(f"🔔 Scout:      {modules['scout']['active_alerts']} Alerts ({modules['scout']['critical']} Critical)")
+    print(f"⚔️  Commander:  {modules['commander']['ready_count']} Ready (Next: {modules['commander']['next_ready']})")
     
     print("\n" + "="*70)
     print("✓ All tests complete!")

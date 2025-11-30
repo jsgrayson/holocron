@@ -1,4 +1,40 @@
+✓ Loaded 10 activities, 2 owned items
+✓ Mock Graph built: 5 zones
+✓ Loaded 8 knowledge sources
+✓ Loaded 11 collectibles, 5 owned
+✓ Loaded 4 items, 2 recipes
+Fetching real data from Wowhead...
+Scraping Boss: https://www.wowhead.com/npc=215657
+Scraping Boss: https://www.wowhead.com/npc=206000
+✓ Loaded Nerub-ar Palace with 8 encounters from Wowhead
+✓ Loaded mock Vault progress
+✓ Loaded 4 tracked events
+Loading Holocron modules...
+✓ Mock Graph built: 5 zones
+✓ Loaded 4 factions, 6 active WQs
+✓ Loaded 10 activities, 2 owned items
+✓ Loaded 8 knowledge sources
+✓ Loaded 11 collectibles, 5 owned
+✓ Loaded 4 items, 2 recipes
+❌ Error loading codex data: name 'json' is not defined
+✓ Loaded mock Vault progress
+✓ Loaded 4 tracked events
+✓ All modules loaded
+Loading real reputation data...
+Could not find DataStore_Reputations.lua. Falling back to mock data.
+✓ Loaded 4 factions, 6 active WQs
+Loading TSM pricing data...
+✓ TSM Brain loaded: 5 item prices
+✓ Loaded 4 items, 2 recipes
+✓ Warden loaded: 677,000g across 3 characters
+Starting Holocron Server on port 5001...
  * Serving Flask app 'server'
- * Debug mode: off
-Address already in use
-Port 5001 is in use by another program. Either identify and stop that program, or start the server with a different port.
+ * Debug mode: on
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5001
+ * Running on http://192.168.1.231:5001
+[33mPress CTRL+C to quit[0m
+ * Restarting with watchdog (fsevents)
+ * Debugger is active!
+ * Debugger PIN: 109-870-163

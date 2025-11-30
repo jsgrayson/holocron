@@ -19,8 +19,8 @@ kill_port() {
 echo "----------------------------------------"
 kill_port 5001 "Holocron Dashboard"
 kill_port 5002 "PetWeaver"
-kill_port 8000 "GoblinStack"
-kill_port 3000 "SkillWeaver"
+kill_port 5004 "GoblinStack"
+kill_port 5003 "SkillWeaver"
 echo "----------------------------------------"
 
 echo "✅ All systems shut down."

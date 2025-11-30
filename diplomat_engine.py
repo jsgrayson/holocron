@@ -82,11 +82,25 @@ class DiplomatEngine:
         
     def load_real_data(self):
         """
-        Load real reputation data from DataStore_Reputations.lua
+        Load real reputation data from DataStore_Reputations.json (uploaded) or .lua (local)
         """
         print("Loading real reputation data...")
         
-        # 1. Find the SavedVariables file
+        # 1. Check for uploaded JSON
+        import json
+        json_path = "DataStore_Reputations.json"
+        
+        if os.path.exists(json_path):
+            print(f"Found uploaded data: {json_path}")
+            try:
+                with open(json_path, "r") as f:
+                    data = json.load(f)
+                self._process_datastore_data(data)
+                return
+            except Exception as e:
+                print(f"Error loading JSON: {e}")
+        
+        # 2. Fallback to finding the SavedVariables file (Local Mode)
         # Check common locations or environment variable
         possible_paths = [
             os.environ.get('WOW_SAVED_VARIABLES_PATH'),
@@ -109,10 +123,10 @@ class DiplomatEngine:
             print("Could not find DataStore_Reputations.lua. Falling back to mock data.")
             self.load_mock_data()
             return
-
+ 
         print(f"Parsing {file_path}...")
         
-        # 2. Parse the Lua file
+        # 3. Parse the Lua file
         data = self.lua_parser.parse_file(file_path, "DataStore_ReputationsDB")
         
         if not data:
@@ -120,7 +134,10 @@ class DiplomatEngine:
             self.load_mock_data()
             return
             
-        # 3. Process the data
+        self._process_datastore_data(data)
+        
+    def _process_datastore_data(self, data):
+        """Process the raw DataStore dictionary"""
         # DataStore structure: DataStore_ReputationsDB.global.Characters[GUID].Factions[FactionID]
         # We need to aggregate or pick the current character. 
         # For MVP, we'll pick the character with the most recent update or just the first one.
@@ -192,7 +209,7 @@ class DiplomatEngine:
         ]
 
     def load_mock_data(self):
-        """Load mock data for testing (no database needed)"""
+        """Load mock reputation and emissary data"""
         
         # TWW Factions
         self.factions = {

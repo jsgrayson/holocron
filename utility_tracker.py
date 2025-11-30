@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Utility Tracker - Mount, Toy, and Spell Collection Progress
+Utility Tracker - Mount, Toy, Spell, and Transmog Collection Progress
 Tracks collectibles and shows completion percentages
 """
 
@@ -13,6 +13,7 @@ class CollectionType(Enum):
     TOY = "Toy"
     SPELL = "Spell"
     PET = "Battle Pet"
+    APPEARANCE = "Transmog"
 
 @dataclass
 class Collectible:
@@ -26,9 +27,10 @@ class Collectible:
 from utils.lua_parser import LuaParser
 import os
 import glob
+import json
 
 class UtilityTracker:
-    """Tracks mount, toy, and spell collections"""
+    """Tracks mount, toy, spell, and transmog collections"""
     
     def __init__(self):
         self.all_collectibles = []
@@ -36,10 +38,47 @@ class UtilityTracker:
         self.lua_parser = LuaParser()
         
     def load_real_data(self):
-        """Load real collection data from DataStore_Mounts/Pets"""
+        """Load real collection data from DataStore_Mounts/Pets/CanIMogIt (JSON or Lua)"""
         print("Loading real collection data...")
         
-        # 1. Find SavedVariables path (reuse logic or config)
+        # 1. Try loading from JSON (Uploaded)
+        mounts_json = "DataStore_Mounts.json"
+        pets_json = "DataStore_Pets.json"
+        mog_json = "CanIMogIt.json"
+        
+        json_loaded = False
+        if os.path.exists(mounts_json):
+            try:
+                with open(mounts_json, "r") as f:
+                    data = json.load(f)
+                self._process_mounts_data(data)
+                json_loaded = True
+            except Exception as e:
+                print(f"Error loading mounts JSON: {e}")
+                
+        if os.path.exists(pets_json):
+            try:
+                with open(pets_json, "r") as f:
+                    data = json.load(f)
+                self._process_pets_data(data)
+                json_loaded = True
+            except Exception as e:
+                print(f"Error loading pets JSON: {e}")
+
+        if os.path.exists(mog_json):
+            try:
+                with open(mog_json, "r") as f:
+                    data = json.load(f)
+                self._process_mog_data(data)
+                json_loaded = True
+            except Exception as e:
+                print(f"Error loading mog JSON: {e}")
+                
+        if json_loaded:
+            print(f"✓ Loaded {len(self.all_collectibles)} collectibles, {len(self.owned)} owned from JSON")
+            return
+
+        # 2. Fallback to SavedVariables (Local)
         possible_paths = [
             os.environ.get('WOW_SAVED_VARIABLES_PATH'),
             os.path.expanduser("~/Documents/holocron/SavedVariables"),
@@ -60,75 +99,74 @@ class UtilityTracker:
             self.load_mock_data()
             return
 
-        # 2. Load Mounts
-        self._load_mounts(sv_path)
+        # Load from Lua files
+        self._load_mounts_lua(sv_path)
+        self._load_pets_lua(sv_path)
+        self._load_mog_lua(sv_path)
         
-        # 3. Load Pets (if available)
-        self._load_pets(sv_path)
+        print(f"✓ Loaded {len(self.all_collectibles)} collectibles, {len(self.owned)} owned from Lua")
+
+    def _load_mog_lua(self, sv_path):
+        mog_file = os.path.join(sv_path, "CanIMogIt.lua")
+        if not os.path.exists(mog_file): return
+        data = self.lua_parser.parse_file(mog_file, "CanIMogItDB")
+        if data: self._process_mog_data(data)
+
+    def _process_mog_data(self, data):
+        try:
+            # CanIMogIt structure: global.appearances[ID] = true
+            db_global = data.get("global", {})
+            appearances = db_global.get("appearances", {})
+            
+            for item_id, known in appearances.items():
+                if known:
+                    try:
+                        iid = int(item_id)
+                        self.owned.add(iid)
+                        self._ensure_collectible(iid, CollectionType.APPEARANCE)
+                    except: pass
+        except Exception as e:
+            print(f"Error processing mog: {e}")
         
-        print(f"✓ Loaded {len(self.all_collectibles)} collectibles, {len(self.owned)} owned")
-        
-    def _load_mounts(self, sv_path):
+    def _load_mounts_lua(self, sv_path):
         mount_file = os.path.join(sv_path, "DataStore_Mounts.lua")
         data = self.lua_parser.parse_file(mount_file, "DataStore_MountsDB")
-        
-        if not data: return
-        
-        # Structure: global.Characters[GUID].Mounts (list of IDs)
-        # Or global.Account.Mounts? DataStore usually stores mounts account-wide now.
-        # Let's check global.Account or iterate characters.
-        
-        # DataStore_Mounts usually has a global table for account-wide mounts
-        # But structure varies. Let's assume we aggregate all unique IDs found.
-        
+        if data: self._process_mounts_data(data)
+
+    def _load_pets_lua(self, sv_path):
+        pet_file = os.path.join(sv_path, "DataStore_Pets.lua")
+        if not os.path.exists(pet_file): return
+        data = self.lua_parser.parse_file(pet_file, "DataStore_PetsDB")
+        if data: self._process_pets_data(data)
+
+    def _process_mounts_data(self, data):
         try:
             db_global = data.get("global", {})
-            # Check for Account-wide mounts
-            # Often in "Global" or "Account" key, or we just union all characters
-            
-            # For simplicity, let's look at the first character or iterate all
             characters = db_global.get("Characters", {})
             
             for char_key, char_data in characters.items():
                 mounts = char_data.get("Mounts", [])
-                # mounts might be a list of IDs or a bitmask/string
-                # If it's a list of ints:
                 if isinstance(mounts, list):
                     for m_id in mounts:
                         if isinstance(m_id, int):
                             self.owned.add(m_id)
-                            # Add to all_collectibles if not present (we need metadata)
-                            # Since we don't have a mount DB, we'll create generic entries for owned ones
-                            # and keep the mock ones as "unowned" examples if they aren't in the list
                             self._ensure_collectible(m_id, CollectionType.MOUNT)
-                            
                 elif isinstance(mounts, dict):
                     for m_id in mounts:
                         self.owned.add(int(m_id))
                         self._ensure_collectible(int(m_id), CollectionType.MOUNT)
-                        
         except Exception as e:
-            print(f"Error loading mounts: {e}")
+            print(f"Error processing mounts: {e}")
 
-    def _load_pets(self, sv_path):
-        pet_file = os.path.join(sv_path, "DataStore_Pets.lua")
-        if not os.path.exists(pet_file): return
-        
-        data = self.lua_parser.parse_file(pet_file, "DataStore_PetsDB")
-        if not data: return
-        
+    def _process_pets_data(self, data):
         try:
             db_global = data.get("global", {})
             characters = db_global.get("Characters", {})
             
             for char_key, char_data in characters.items():
                 pets = char_data.get("Pets", [])
-                # Pets are usually stored as "SpeciesID|Level|..." strings or similar
-                # Or just a list of IDs
-                
                 if isinstance(pets, list):
                     for p in pets:
-                        # If string "123|1|..."
                         if isinstance(p, str) and "|" in p:
                             try:
                                 species_id = int(p.split("|")[0])
@@ -138,9 +176,8 @@ class UtilityTracker:
                         elif isinstance(p, int):
                             self.owned.add(p)
                             self._ensure_collectible(p, CollectionType.PET)
-                            
         except Exception as e:
-            print(f"Error loading pets: {e}")
+            print(f"Error processing pets: {e}")
 
     def _ensure_collectible(self, item_id: int, c_type: CollectionType):
         # Check if already exists
@@ -187,6 +224,10 @@ class UtilityTracker:
                        "Firelands Questline", "Medium", "Cataclysm"),
             Collectible(202, "Hidden Artifact Appearance", CollectionType.SPELL,
                        "Secret Quest Chain", "Very Hard", "Legion"),
+            
+            # Transmog
+            Collectible(300, "Tusks of Mannoroth", CollectionType.APPEARANCE,
+                        "Siege of Orgrimmar", "Very Hard", "MoP"),
         ]
         
         # Mock owned items
@@ -248,11 +289,13 @@ class UtilityTracker:
         mounts = self.get_progress(CollectionType.MOUNT)
         toys = self.get_progress(CollectionType.TOY)
         spells = self.get_progress(CollectionType.SPELL)
+        mog = self.get_progress(CollectionType.APPEARANCE)
         
         return {
             "mounts": mounts,
             "toys": toys,
             "spells": spells,
+            "transmog": mog,
             "overall": self.get_progress()
         }
 
@@ -275,29 +318,8 @@ if __name__ == "__main__":
     print(f"\n  Mounts: {summary['mounts']['owned']}/{summary['mounts']['total']} ({summary['mounts']['percent']}%)")
     print(f"  Toys: {summary['toys']['owned']}/{summary['toys']['total']} ({summary['toys']['percent']}%)")
     print(f"  Spells: {summary['spells']['owned']}/{summary['spells']['total']} ({summary['spells']['percent']}%)")
+    print(f"  Transmog: {summary['transmog']['owned']}/{summary['transmog']['total']} ({summary['transmog']['percent']}%)")
     print(f"\n  Overall: {summary['overall']['owned']}/{summary['overall']['total']} ({summary['overall']['percent']}%)")
-    
-    # Test 2: Missing mounts
-    print("\n" + "="*70)
-    print("MISSING MOUNTS (Easiest First)")
-    print("="*70)
-    
-    missing_mounts = tracker.get_missing_items(CollectionType.MOUNT)
-    for i, mount in enumerate(missing_mounts, 1):
-        print(f"\n  {i}. {mount['name']} ({mount['difficulty']})")
-        print(f"     Source: {mount['source']}")
-        print(f"     Expansion: {mount['expansion']}")
-    
-    # Test 3: Difficulty breakdown
-    print("\n" + "="*70)
-    print("MISSING MOUNTS BY DIFFICULTY")
-    print("="*70)
-    
-    mount_progress = summary['mounts']
-    print(f"\n  Total missing: {mount_progress['missing']}")
-    for difficulty, count in mount_progress['missing_by_difficulty'].items():
-        if count > 0:
-            print(f"  - {difficulty}: {count}")
     
     print("\n" + "="*70)
     print("✓ All tests complete!")

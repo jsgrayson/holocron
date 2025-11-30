@@ -1,7 +1,7 @@
 // Holocron Widget for Scriptable (iOS)
 // Copy this into the Scriptable App
 
-const SERVER_URL = "http://YOUR_SERVER_IP:5000"; // Update this!
+const SERVER_URL = "http://localhost:5001"; // Update this!
 
 let widget = await createWidget();
 if (config.runsInWidget) {

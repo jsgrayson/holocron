@@ -64,5 +64,5 @@ def get_gear(character):
     })
 
 if __name__ == '__main__':
-    print("🚀 Starting SkillWeaver on http://127.0.0.1:8001")
-    app.run(host='0.0.0.0', port=8001, debug=False)
+    print("🚀 Starting SkillWeaver on http://127.0.0.1:5003")
+    app.run(host='0.0.0.0', port=5003, debug=False)

@@ -71,6 +71,42 @@ class PathfinderEngine:
         self.graph.add_edge(1670, 84, method="PORTAL", time=15, requirements="")
         
         print(f"✓ Mock Graph built: {self.graph.number_of_nodes()} zones")
+
+    def load_real_data(self):
+        """Load real player data from SavedInstances.json"""
+        import json
+        json_path = "SavedInstances.json"
+        
+        if not os.path.exists(json_path):
+            print("SavedInstances.json not found. Using mock player data.")
+            return
+
+        try:
+            with open(json_path, "r") as f:
+                data = json.load(f)
+            
+            # SavedInstances structure: DB.Toons["Realm - Name"]
+            db = data.get("DB", {})
+            toons = db.get("Toons", {})
+            
+            # Find most recently active toon
+            latest_toon = None
+            latest_time = 0
+            
+            for name, info in toons.items():
+                last_seen = info.get("LastSeen", 0)
+                if last_seen > latest_time:
+                    latest_time = last_seen
+                    latest_toon = info
+                    
+            if latest_toon:
+                zone = latest_toon.get("Zone", "Unknown")
+                print(f"✓ Loaded real data: Player is in {zone}")
+                # Store this for dashboard use
+                self.current_player_zone = zone
+                
+        except Exception as e:
+            print(f"Error loading SavedInstances: {e}")
     
     def find_shortest_path(
         self,
