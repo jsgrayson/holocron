@@ -1,0 +1,144 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-12">
+        <h1 class="display-4 text-white" style="text-shadow: 0 0 10px #9b59b6;">Grand Unification</h1>
+        <p class="lead text-muted">Synergy between Holocron, Goblin, and DeepPockets.</p>
+    </div>
+</div>
+
+<div class="row">
+    <!-- Economy of Scale -->
+    <div class="col-md-4">
+        <div class="card bg-dark border-warning mb-4">
+            <div class="card-header border-warning text-warning">
+                <i class="bi bi-piggy-bank"></i> Economy of Scale
+            </div>
+            <div class="card-body">
+                <p class="card-text">Check stock before buying from AH.</p>
+                <div class="input-group mb-3">
+                    <input type="text" class="form-control bg-dark text-white" placeholder="Item ID (e.g. 198765)"
+                        id="economyInput" value="198765">
+                    <button class="btn btn-warning" type="button" onclick="checkEconomy()">Check</button>
+                </div>
+                <div id="economyResults"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Cost Per Cast -->
+    <div class="col-md-4">
+        <div class="card bg-dark border-danger mb-4">
+            <div class="card-header border-danger text-danger">
+                <i class="bi bi-graph-down"></i> Cost-Per-Cast
+            </div>
+            <div class="card-body">
+                <p class="card-text">Analyze consumable expenses.</p>
+                <button class="btn btn-danger w-100 mb-3" onclick="checkCost()">Analyze Raid Night</button>
+                <div id="costResults"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- The Zookeeper -->
+    <div class="col-md-4">
+        <div class="card bg-dark border-success mb-4">
+            <div class="card-header border-success text-success">
+                <i class="bi bi-box-seam"></i> The Zookeeper
+            </div>
+            <div class="card-body">
+                <p class="card-text">Manage duplicate pets.</p>
+                <button class="btn btn-success w-100 mb-3" onclick="runZookeeper()">Find Duplicates</button>
+                <div id="zooResults"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    async function checkEconomy() {
+        const itemId = document.getElementById('economyInput').value;
+        const resultsDiv = document.getElementById('economyResults');
+        resultsDiv.innerHTML = '<div class="spinner-border text-warning" role="status"></div>';
+
+        try {
+            const response = await fetch(`/api/synergy/economy_check?item_id=${itemId}`);
+            const data = await response.json();
+
+            let html = '';
+            if (data.action === "USE_STOCK") {
+                html = `
+            <div class="alert alert-success">
+                <strong>STOP!</strong> Do not buy.
+                <br>You have <strong>${data.stock_count}</strong> in stock.
+                <br>Savings: <span class="text-warning">${data.potential_savings}g</span>
+            </div>
+            <ul class="list-group list-group-flush">`;
+                data.locations.forEach(loc => {
+                    html += `<li class="list-group-item bg-dark text-white">${loc.character} (${loc.container}): ${loc.count}</li>`;
+                });
+                html += '</ul>';
+            } else {
+                html = `<div class="alert alert-secondary">Stock empty. Safe to buy from AH.</div>`;
+            }
+            resultsDiv.innerHTML = html;
+        } catch (error) {
+            resultsDiv.innerHTML = `<div class="alert alert-danger">Error: ${error.message}</div>`;
+        }
+    }
+
+    async function checkCost() {
+        const resultsDiv = document.getElementById('costResults');
+        resultsDiv.innerHTML = '<div class="spinner-border text-danger" role="status"></div>';
+
+        try {
+            const response = await fetch('/api/synergy/consumable_cost');
+            const data = await response.json();
+
+            let html = `<h5 class="text-white">Total: <span class="text-danger">${data.total_cost}g</span></h5>`;
+            html += '<ul class="list-group list-group-flush">';
+            data.breakdown.forEach(item => {
+                html += `
+            <li class="list-group-item bg-dark text-white d-flex justify-content-between">
+                <span>${item.name} (x${item.count})</span>
+                <span>${item.total}g</span>
+            </li>`;
+            });
+            html += '</ul>';
+            resultsDiv.innerHTML = html;
+        } catch (error) {
+            resultsDiv.innerHTML = `<div class="alert alert-danger">Error: ${error.message}</div>`;
+        }
+    }
+
+    async function runZookeeper() {
+        const resultsDiv = document.getElementById('zooResults');
+        resultsDiv.innerHTML = '<div class="spinner-border text-success" role="status"></div>';
+
+        try {
+            const response = await fetch('/api/synergy/zookeeper', { method: 'POST' });
+            const data = await response.json();
+
+            if (data.total_duplicates_found === 0) {
+                resultsDiv.innerHTML = '<div class="alert alert-info">No duplicates found.</div>';
+                return;
+            }
+
+            let html = `<div class="alert alert-warning">Found ${data.total_duplicates_found} duplicates!</div>`;
+            html += '<ul class="list-group list-group-flush">';
+            data.tasks.forEach(task => {
+                html += `
+            <li class="list-group-item bg-dark text-white">
+                <i class="bi bi-envelope"></i> Mail <strong>${task.pet_name}</strong>
+                <br><small>${task.from} <i class="bi bi-arrow-right"></i> ${task.to}</small>
+            </li>`;
+            });
+            html += '</ul>';
+            resultsDiv.innerHTML = html;
+        } catch (error) {
+            resultsDiv.innerHTML = `<div class="alert alert-danger">Error: ${error.message}</div>`;
+        }
+    }
+</script>
+{% endblock %}

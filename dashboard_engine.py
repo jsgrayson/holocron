@@ -47,10 +47,12 @@ class DashboardEngine:
         print("Loading Holocron modules...")
         
         # Pathfinder (DB based)
-        try:
-            self.pathfinder.build_graph()
-        except:
-            self.pathfinder.load_mock_data()
+        # Force mock data for now to avoid DB connection timeouts
+        self.pathfinder.load_mock_data()
+        # try:
+        #     self.pathfinder.build_graph()
+        # except:
+        #     self.pathfinder.load_mock_data()
         
         # Load player state (SavedInstances)
         self.pathfinder.load_real_data()

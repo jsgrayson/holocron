@@ -62,4 +62,36 @@ CREATE TABLE IF NOT EXISTS skillweaver.profiles (
 );
 
 -- Index for faster lookups
+-- Index for faster lookups
 CREATE INDEX idx_profiles_spec ON skillweaver.profiles(spec_id);
+
+-- Gear: Equipped items
+CREATE TABLE IF NOT EXISTS holocron.gear (
+    character_guid VARCHAR(255) REFERENCES holocron.characters(character_guid),
+    slot_id INT NOT NULL, -- 1=Head, 2=Neck, etc.
+    item_id INT NOT NULL,
+    item_level INT,
+    item_link TEXT,
+    last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (character_guid, slot_id)
+);
+
+-- Professions: Skill levels
+CREATE TABLE IF NOT EXISTS goblin.professions (
+    character_guid VARCHAR(255) REFERENCES holocron.characters(character_guid),
+    profession_id INT NOT NULL,
+    profession_name VARCHAR(100),
+    skill_level INT,
+    max_skill INT,
+    last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (character_guid, profession_id)
+);
+
+-- Recipes: Known recipes
+CREATE TABLE IF NOT EXISTS goblin.recipes (
+    character_guid VARCHAR(255) REFERENCES holocron.characters(character_guid),
+    recipe_id INT NOT NULL,
+    profession_id INT,
+    last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (character_guid, recipe_id)
+);

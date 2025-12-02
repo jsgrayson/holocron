@@ -1,91 +1,134 @@
-{% extends 'base.html' %}
+{% extends "base.html" %}
 
 {% block content %}
-<!-- Hero Header -->
-<div class="row mb-5">
-    <div class="col-md-12">
-        <div class="hero-header p-5 text-center">
-            <h1 class="display-3 fw-bold mb-3 hero-title">🧭 The Navigator</h1>
-            <p class="lead hero-subtitle mb-0">
-                <i class="fas fa-calendar-check me-2"></i>Lockout tracking & farm availability across all characters
-            </p>
-            <div class="animated-border mt-4"></div>
-        </div>
-    </div>
-</div>
 <div class="row mb-4">
-    <div class="col-md-12">
-        <div class="mb-4">
-            <div class="form-check form-check-inline">
-                <input class="form-check-input" type="checkbox" id="toggleRaid" checked onchange="filterActivities()">
-                <label class="form-check-label" for="toggleRaid">Raids</label>
-            </div>
-            <div class="form-check form-check-inline">
-                <input class="form-check-input" type="checkbox" id="toggleDungeon" checked
-                    onchange="filterActivities()">
-                <label class="form-check-label" for="toggleDungeon">Dungeons</label>
-            </div>
-            <div class="form-check form-check-inline">
-                <input class="form-check-input" type="checkbox" id="toggleHoliday" checked
-                    onchange="filterActivities()">
-                <label class="form-check-label" for="toggleHoliday">Holidays</label>
-            </div>
-            <div class="form-check form-check-inline">
-                <input class="form-check-input" type="checkbox" id="toggleReputation" checked
-                    onchange="filterActivities()">
-                <label class="form-check-label" for="toggleReputation">Reputation</label>
-            </div>
-        </div>
+    <div class="col-12">
+        <h1 class="display-4 text-primary">The Navigator 2.0</h1>
+        <p class="lead text-muted">Dynamic Quest Routing & Travel Entertainment.</p>
     </div>
 </div>
 
-<div class="row" id="activityGrid">
-    {% for activity in activities %}
-    <div class="col-md-4 mb-4 activity-card" data-type="{{ activity.type }}">
-        <div class="card h-100">
-            <div
-                class="card-header {% if activity.type == 'Holiday' %}bg-danger{% elif activity.type == 'Reputation' %}bg-warning text-dark{% else %}bg-primary{% endif %} text-white">
-                {{ activity.instance_name }}
+<div class="row">
+    <!-- Route Optimizer -->
+    <div class="col-md-6">
+        <div class="card bg-dark border-primary mb-4">
+            <div class="card-header border-primary text-primary">
+                <i class="bi bi-map"></i> Route Optimizer
             </div>
             <div class="card-body">
-                <h5 class="card-title">{{ activity.drop_name }}</h5>
-                <p class="card-text">
-                    <span class="badge bg-secondary">{{ activity.type }}</span>
-                    <span class="badge bg-info text-dark">{{ activity.expansion }}</span>
-                </p>
-                <p class="card-text">
-                    Available on <strong>{{ activity.available_count }}</strong> characters.
-                </p>
-                {% if activity.type == 'Reputation' %}
-                <a href="/diplomat" class="btn btn-outline-dark btn-sm">Open Diplomat</a>
-                {% else %}
-                <button class="btn btn-outline-light btn-sm">View Alts</button>
-                {% endif %}
+                <div class="mb-3">
+                    <label class="form-label">Current Zone</label>
+                    <select class="form-select bg-dark text-white" id="startZone">
+                        <option value="84">Stormwind</option>
+                        <option value="1670">Oribos</option>
+                        <option value="1978">Dragon Isles</option>
+                    </select>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Destinations (Zone IDs)</label>
+                    <input type="text" class="form-control bg-dark text-white" id="destinations"
+                        value="2022, 2023, 2024">
+                    <small class="text-muted">Comma separated</small>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Active Quest IDs (for Bank Check)</label>
+                    <input type="text" class="form-control bg-dark text-white" id="quests" value="123, 456">
+                </div>
+                <button class="btn btn-primary w-100" onclick="optimizeRoute()">Calculate Optimal Path</button>
+            </div>
+        </div>
+
+        <div id="routeResults"></div>
+    </div>
+
+    <!-- The Commute Overlay -->
+    <div class="col-md-6">
+        <div class="card bg-dark border-info">
+            <div class="card-header border-info text-info">
+                <i class="bi bi-airplane"></i> The Commute (Overlay Mode)
+            </div>
+            <div class="card-body text-center">
+                <div id="commuteStatus" class="mb-4">
+                    <h2 class="display-6">Ready for Departure</h2>
+                    <p class="text-muted">Waiting for route...</p>
+                </div>
+
+                <div class="ratio ratio-16x9 mb-3">
+                    <iframe src="https://www.youtube.com/embed/jfKfPfyJRdk?si=rel=0" title="YouTube video player"
+                        frameborder="0"
+                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                        allowfullscreen></iframe>
+                </div>
+
+                <button class="btn btn-outline-info btn-sm" onclick="toggleOverlay()">Pop Out Overlay</button>
             </div>
         </div>
     </div>
-    {% endfor %}
 </div>
 
 <script>
-    function filterActivities() {
-        const showRaid = document.getElementById('toggleRaid').checked;
-        const showDungeon = document.getElementById('toggleDungeon').checked;
-        const showHoliday = document.getElementById('toggleHoliday').checked;
-        const showReputation = document.getElementById('toggleReputation').checked;
+    async function optimizeRoute() {
+        const startZone = parseInt(document.getElementById('startZone').value);
+        const dests = document.getElementById('destinations').value.split(',').map(Number);
+        const quests = document.getElementById('quests').value.split(',').map(Number);
 
-        const cards = document.querySelectorAll('.activity-card');
-        cards.forEach(card => {
-            const type = card.getAttribute('data-type');
-            let visible = false;
+        const resultsDiv = document.getElementById('routeResults');
+        resultsDiv.innerHTML = '<div class="spinner-border text-primary" role="status"></div>';
 
-            if (type === 'Raid' && showRaid) visible = true;
-            if (type === 'Dungeon' && showDungeon) visible = true;
-            if (type === 'Holiday' && showHoliday) visible = true;
-            if (type === 'Reputation' && showReputation) visible = true;
+        try {
+            const response = await fetch('/api/navigator/optimize', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    current_zone: startZone,
+                    destinations: dests,
+                    quests: quests
+                })
+            });
+            const data = await response.json();
 
-            card.style.display = visible ? 'block' : 'none';
-        });
+            if (!data.route.success) {
+                resultsDiv.innerHTML = `<div class="alert alert-danger">${data.route.error}</div>`;
+                return;
+            }
+
+            // Update Commute Status
+            document.getElementById('commuteStatus').innerHTML = `
+            <h2 class="display-6 text-success">En Route: ${data.route.route_order[1] || 'Destination'}</h2>
+            <p class="text-white">ETA: ${data.route.total_time}s</p>
+        `;
+
+            let html = '';
+
+            if (data.bank_stops_added) {
+                html += `<div class="alert alert-warning"><i class="bi bi-exclamation-triangle"></i> <strong>Bank Stop Added!</strong> You have quest items stashed away.</div>`;
+            }
+
+            html += '<ul class="list-group">';
+            let stepNum = 1;
+            data.route.segments.forEach(seg => {
+                html += `
+            <li class="list-group-item bg-dark text-white border-secondary">
+                <div class="d-flex justify-content-between">
+                    <span><strong>${stepNum}. ${seg.from}</strong> <i class="bi bi-arrow-right"></i> <strong>${seg.to}</strong></span>
+                    <span class="badge bg-primary">${seg.method}</span>
+                </div>
+                <small class="text-muted">Travel Time: ${seg.time}s</small>
+            </li>
+            `;
+                stepNum++;
+            });
+            html += '</ul>';
+
+            resultsDiv.innerHTML = html;
+
+        } catch (error) {
+            resultsDiv.innerHTML = `<div class="alert alert-danger">Error: ${error.message}</div>`;
+        }
+    }
+
+    function toggleOverlay() {
+        alert("In a real app, this would open a minimal 'Always On Top' window for the second monitor.");
     }
 </script>
 {% endblock %}

@@ -1,0 +1,8 @@
+## Interface: 110000
+## Title: PetWeaver
+## Notes: Advanced Pet Battle Assistant
+## Author: Holocron
+## Version: 2.0
+## SavedVariables: PetWeaverDB
+
+PetWeaver.lua

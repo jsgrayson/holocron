@@ -1,0 +1,8 @@
+## Interface: 110000
+## Title: PetWeaver
+## Notes: Automated Pet Battle Manager
+## Author: Holocron
+## Version: 1.0
+## SavedVariables: PetWeaverDB
+
+PetWeaver.lua

@@ -310,6 +310,191 @@ class GoblinEngine:
             }
         ]
     
+    def get_posting_instructions(self) -> List[Dict]:
+        """
+        Generate posting instructions for the in-game addon.
+        Returns: List of {item_id, min_price, normal_price, max_price, stack_size}
+        """
+        instructions = []
+        
+        # For MVP, we'll generate instructions for our known items
+        # In reality, this would filter for items currently in the player's inventory (via DeepPockets)
+        
+        for item in self.items:
+            # Simple pricing logic for demo
+            # Min = 80% of market, Normal = 100%, Max = 150%
+            market = item.market_value
+            
+            instructions.append({
+                "item_id": item.id,
+                "name": item.name, # Helper for Lua debug
+                "min_price": int(market * 0.8 * 10000), # Convert to copper
+                "normal_price": int(market * 1.0 * 10000),
+                "max_price": int(market * 1.5 * 10000),
+                "stack_size": 1, # Default to singles for gear, max for mats?
+                "undercut": 1 # 1 copper
+            })
+            
+        return instructions
+
+    def get_mail_instructions(self) -> List[Dict]:
+        """
+        Generate mailing instructions for the in-game addon.
+        Returns: List of {item_id, target, keep_amount, reason}
+        """
+        instructions = []
+        
+        # Mock Rules (In reality, these would be user-configured)
+        # 1. Herbs -> Alchemist (Alt-A)
+        # 2. Ore -> Blacksmith (Main)
+        # 3. Cloth -> Tailor (Alt-B)
+        # 4. BoE/Transmog -> Banker (BankAlt)
+        
+        # We'll use our mock items to demonstrate
+        
+        # Draconium Ore (198765) -> Main
+        instructions.append({
+            "item_id": 198765,
+            "target": "Main",
+            "keep_amount": 0,
+            "reason": "Blacksmithing"
+        })
+        
+        # Hochenblume (194820) -> Alt-A
+        instructions.append({
+            "item_id": 194820,
+            "target": "Alt-A",
+            "keep_amount": 0,
+            "reason": "Alchemy"
+        })
+        
+        # Resonant Crystal (200111) -> BankAlt (Valuable Mat)
+        instructions.append({
+            "item_id": 200111,
+            "target": "BankAlt",
+            "keep_amount": 0,
+            "reason": "Storage"
+        })
+        
+        return instructions
+
+    def get_best_crafting_value(self, item_id: int) -> float:
+        """
+        Calculate the highest potential value of an item if used in crafting.
+        Returns: Value per unit of the item.
+        """
+        best_value = 0.0
+        
+        # Iterate through all recipes to see if this item is a reagent
+        for recipe in self.recipes:
+            if item_id in recipe.reagents:
+                # Calculate value contribution:
+                # (Result Price - Cost of OTHER reagents) / Quantity of THIS reagent
+                
+                result_price = 0
+                if self.tsm_engine:
+                    result_price = self.tsm_engine.get_market_value(recipe.result_item_id)
+                
+                # Fallback Result Price
+                if result_price == 0:
+                     if recipe.name == "Draconium Ingot": result_price = 100
+                     elif recipe.name == "Elemental Potion of Ultimate Power": result_price = 500
+                
+                other_reagents_cost = 0
+                this_reagent_qty = recipe.reagents[item_id]
+                
+                for rid, qty in recipe.reagents.items():
+                    if rid != item_id:
+                        # Cost of other reagents
+                        r_price = 0
+                        if self.tsm_engine:
+                            r_price = self.tsm_engine.get_market_value(rid)
+                        if r_price == 0:
+                             # Fallback
+                             r_item = next((i for i in self.items if i.id == rid), None)
+                             if r_item: r_price = r_item.market_value
+                        
+                        other_reagents_cost += r_price * qty
+                
+                # Value attributed to this item
+                # Profit from craft = Result - (Other + This)
+                # We want to know if (Result - Other) / Qty > Current Value
+                implied_value = (result_price - other_reagents_cost) / this_reagent_qty
+                
+                if implied_value > best_value:
+                    best_value = implied_value
+                    
+        return best_value
+
+    def get_destroy_instructions(self) -> List[Dict]:
+        """
+        Generate destroy instructions (Disenchant/Mill/Prospect).
+        Returns: List of {item_id, action, macro_text}
+        """
+        instructions = []
+        
+        # Mock Rules
+        # 1. Green Gear -> Disenchant
+        # 2. Herbs -> Mill
+        # 3. Ore -> Prospect
+        
+        # Mock Values
+        # Dust = 20g, Pigment = 50g, Gem = 100g
+        
+        # Mock Items
+        # Green Bracers (123456) -> Disenchant
+        # Market Value: 15g. Destroy Value: 20g (1 Dust). Profit: +5g.
+        # Crafting Value: 0 (Not used in crafting)
+        instructions.append({
+            "item_id": 123456,
+            "action": "Disenchant",
+            "macro_text": "/cast Disenchant\n/use item:123456",
+            "profit": 5,
+            "destroy_value": 20,
+            "market_value": 15
+        })
+        
+        # Draconium Ore (198765) -> Prospect (if > 5)
+        # Market Value: 45g. 
+        # Destroy Value: 60g (0.6 Gem). 
+        # Crafting Value (Ingot): (100g - 0) / 2 = 50g.
+        # Best Alternative: Crafting (50g) > Market (45g).
+        # Destroy (60g) > Crafting (50g).
+        # Profit vs Best Alt: 60 - 50 = +10g.
+        
+        crafting_val = self.get_best_crafting_value(198765) # Should be 50
+        market_val = 45
+        destroy_val = 60
+        best_alt = max(market_val, crafting_val)
+        
+        if destroy_val > best_alt:
+            instructions.append({
+                "item_id": 198765,
+                "action": "Prospect",
+                "macro_text": "/cast Prospecting\n/use item:198765",
+                "profit": destroy_val - best_alt,
+                "destroy_value": destroy_val,
+                "market_value": best_alt # Show the best alternative as the baseline
+            })
+        
+        return instructions
+
+    def generate_tsm_string(self, items: List[int]) -> str:
+        """
+        Generate a TSM Group Import string from a list of item IDs.
+        Format: i:12345,i:67890
+        """
+        if not items:
+            return ""
+        
+        # Filter out invalid IDs
+        valid_ids = [str(i) for i in items if isinstance(i, int) and i > 0]
+        
+        # Prefix with 'i:' and join with commas
+        tsm_string = ",".join([f"i:{i}" for i in valid_ids])
+        
+        return tsm_string
+    
     def _get_recommendation(self, profit: float, sale_rate: float) -> str:
         """Generate recommendation string"""
         if profit <= 0:

@@ -460,6 +460,34 @@ def goblin_crafting():
     
     return jsonify({"queue": queue})
 
+@app.route('/api/goblin/tsm_export', methods=['POST'])
+def goblin_tsm_export():
+    """
+    Generate TSM import string for a list of items.
+    POST body: { "items": [123, 456] }
+    """
+    data = request.get_json()
+    items = data.get('items', [])
+    
+    if not items:
+        # If no items provided, default to "Safe to Sell" list from DB/View
+        # For MVP, we'll use a mock list or fetch from the liquidation view logic
+        # Let's re-use the logic from /liquidation route but just get IDs
+        try:
+            conn = get_db_connection()
+            cur = conn.cursor()
+            cur.execute("SELECT item_id FROM holocron.view_liquidatable_assets") # Assuming view has item_id
+            rows = cur.fetchall()
+            items = [r[0] for r in rows]
+            cur.close()
+            conn.close()
+        except Exception:
+            # Fallback mock
+            items = [198765, 194820, 12345] 
+            
+    tsm_string = goblin_engine.generate_tsm_string(items)
+    return jsonify({"tsm_string": tsm_string})
+
 @app.route('/goblin')
 def goblin():
     """Goblin Brain UI"""
@@ -469,6 +497,241 @@ def goblin():
     return render_template('goblin.html',
                           analysis=analysis,
                           score=score)
+
+# ============================================================================
+# GoblinAI v2.0 API Endpoints (For addon integration)
+# ============================================================================
+
+@app.route('/api/goblin/prices')
+def goblin_prices():
+    """
+    Get market prices for all items (DBMarket equivalent)
+    Returns: {"prices": {itemID: price, ...}}
+    """
+    try:
+        # Get market prices from goblin_engine
+        analysis = goblin_engine.analyze_market()
+        
+        # Build price dict
+        prices = {}
+        for opp in analysis.get('opportunities', []):
+            item_id = opp.get('item_id')
+            market_value = opp.get('market_value', 0)
+            if item_id and market_value:
+                prices[item_id] = market_value
+        
+        return jsonify({"prices": prices})
+    except Exception as e:
+        print(f"Error in /api/goblin/prices: {e}")
+        return jsonify({"prices": {}})
+
+@app.route('/api/goblin/opportunities')
+def goblin_opportunities():
+    """
+    Get AI-recommended flip opportunities from ML models
+    Returns: {"opportunities": [{itemID, buyPrice, sellPrice, profit, roi, confidence}, ...]}
+    """
+    try:
+        analysis = goblin_engine.analyze_market()
+        opportunities = []
+        
+        for opp in analysis.get('opportunities', []):
+            if opp.get('profit', 0) > 0:
+                opportunities.append({
+                    "itemID": opp.get('item_id'),
+                    "buyPrice": opp.get('avg_buyout', 0),
+                    "sellPrice": opp.get('market_value', 0),
+                    "profit": opp.get('profit', 0),
+                    "roi": opp.get('profit_margin', 0),
+                    "predictedDemand": "high" if opp.get('sale_rate', 0) > 0.5 else "medium",
+                    "confidence": opp.get('sale_rate', 0.5),
+                })
+        
+        # Sort by profit
+        opportunities.sort(key=lambda x: x['profit'], reverse=True)
+        
+        return jsonify({"opportunities": opportunities[:50]})  # Top 50
+    except Exception as e:
+        print(f"Error in /api/goblin/opportunities: {e}")
+        return jsonify({"opportunities": []})
+
+@app.route('/api/goblin/scan', methods=['POST'])
+def goblin_scan_upload():
+    """
+    Upload AH scan data from addon for ML training
+    POST body: {timestamp, realm, faction, character, scan: [{item_id, price, quantity}, ...]}
+    """
+    try:
+        data = request.get_json()
+        
+        if not data or 'scan' not in data:
+            return jsonify({"error": "Missing scan data"}), 400
+        
+        # Store scan data in database
+        conn = get_db_connection()
+        cur = conn.cursor()
+        
+        realm = data.get('realm', 'Unknown')
+        faction = data.get('faction', 'Unknown')
+        character = data.get('character', 'Unknown')
+        timestamp = data.get('timestamp', 0)
+        
+        # Insert scan metadata
+        cur.execute("""
+            INSERT INTO auctionhouse.scans (realm, faction, character, timestamp, item_count)
+            VALUES (%s, %s, %s, to_timestamp(%s), %s)
+            RETURNING scan_id
+        """, (realm, faction, character, timestamp, len(data['scan'])))
+        
+        scan_id = cur.fetchone()[0]
+        
+        # Insert individual items
+        for item in data['scan']:
+            cur.execute("""
+                INSERT INTO auctionhouse.scan_items (scan_id, item_id, price, quantity)
+                VALUES (%s, %s, %s, %s)
+            """, (scan_id, item.get('item_id'), item.get('price'), item.get('quantity', 1)))
+        
+        conn.commit()
+        cur.close()
+        conn.close()
+        
+        return jsonify({"status": "success", "scan_id": scan_id, "items": len(data['scan'])})
+    except Exception as e:
+        print(f"Error in /api/goblin/scan: {e}")
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+@app.route('/api/goblin/trends')
+def goblin_trends():
+    """
+    Get ML-powered market trend predictions
+    Returns: {"trends": [{itemID, trend, prediction, confidence, timeframe}, ...]}
+    """
+    try:
+        # This would integrate with ML model for predictions
+        # For now, return mock trends
+        trends = [
+            {
+                "itemID": 210814,  # Algari Mana Potion
+                "trend": "rising",
+                "prediction": "spike_expected",
+                "confidence": 0.78,
+                "timeframe": "24h",
+            },
+            {
+                "itemID": 211515,  # Null Stone
+                "trend": "stable",
+                "prediction": "hold_steady",
+                "confidence": 0.65,
+                "timeframe": "48h",
+            }
+        ]
+        
+        return jsonify({"trends": trends})
+    except Exception as e:
+        print(f"Error in /api/goblin/trends: {e}")
+        return jsonify({"trends": []})
+
+@app.route('/api/goblin/portfolio')
+def goblin_portfolio():
+    """
+    Get portfolio value across all characters
+    Returns: {"portfolio": {totalValue, todayProfit, weekProfit, activeAuctions, pendingSales}}
+    """
+    try:
+        # Query database for character portfolio
+        conn = get_db_connection()
+        cur = conn.cursor()
+        
+        # Get total AH value
+        cur.execute("""
+            SELECT COALESCE(SUM(buyout), 0) as total_value,
+                   COUNT(*) as active_auctions
+            FROM auctionhouse.auctions
+            WHERE owner = %s
+        """, (request.args.get('character', 'Unknown'),))
+        
+        row = cur.fetchone()
+        total_value = row[0] if row else 0
+        active_auctions = row[1] if row else 0
+        
+        cur.close()
+        conn.close()
+        
+        portfolio = {
+            "totalValue": int(total_value),
+            "todayProfit": 0,  # Would calculate from ledger
+            "weekProfit": 0,   # Would calculate from ledger
+            "activeAuctions": active_auctions,
+            "pendingSales": int(total_value * 0.7),  # Estimate
+        }
+        
+        return jsonify({"portfolio": portfolio})
+    except Exception as e:
+        print(f"Error in /api/goblin/portfolio: {e}")
+        return jsonify({"portfolio": {
+            "totalValue": 0,
+            "todayProfit": 0,
+            "weekProfit": 0,
+            "activeAuctions": 0,
+            "pendingSales": 0,
+        }})
+
+@app.route('/api/goblin/auto_groups')
+def goblin_auto_groups():
+    """
+    Generate AI-optimized trading groups based on market analysis
+    Uses ML engine to classify items and recommend operations
+    """
+    try:
+        from goblin_ml_engine import generate_auto_groups_endpoint
+        
+        # Get market analysis
+        analysis = goblin_engine.analyze_market()
+        
+        # Generate auto-groups using ML
+        result = generate_auto_groups_endpoint(analysis.get('opportunities', []))
+        
+        return jsonify(result)
+    except Exception as e:
+        print(f"Error in /api/goblin/auto_groups: {e}")
+        return jsonify({"groups": [], "error": str(e)})
+
+@app.route('/api/goblin/predictions')
+def goblin_predictions():
+    """
+    Get news-based market shift predictions
+    Scans Wowhead, MMO-Champion, Blizzard news for upcoming changes
+    """
+    try:
+        from goblin_news_engine import get_market_predictions_endpoint
+        
+        result = get_market_predictions_endpoint()
+        
+        return jsonify(result)
+    except Exception as e:
+        print(f"Error in /api/goblin/predictions: {e}")
+        return jsonify({"predictions": [], "stockpile_now": [], "error": str(e)})
+
+@app.route('/api/goblin/dominate')
+def goblin_dominate():
+    """
+    Get aggressive market domination strategies
+    Reset sniping, monopoly control, competitor analysis
+    """
+    try:
+        from goblin_domination import get_domination_strategies
+        
+        # Get latest scan data
+        analysis = goblin_engine.analyze_market()
+        
+        result = get_domination_strategies(analysis.get('opportunities', []))
+        
+        return jsonify(result)
+    except Exception as e:
+        print(f"Error in /api/goblin/dominate: {e}")
+        return jsonify({"error": str(e)})
+
 
 # --- CODEX MODULE ---
 from codex_engine import CodexEngine, Role
@@ -548,6 +811,169 @@ def scout():
     alerts = scout_engine.get_alerts()
     return render_template('scout.html', alerts=alerts)
     return render_template('scout.html', alerts=alerts)
+
+    return render_template('scout.html', alerts=alerts)
+
+# --- DEEPPOCKETS MODULE ---
+from deeppockets_engine import DeepPocketsEngine
+
+# Initialize DeepPockets engine once
+deeppockets_engine = DeepPocketsEngine()
+deeppockets_engine.load_real_data()
+
+@app.route('/api/deeppockets/inventory')
+def deeppockets_inventory():
+    """Get account-wide inventory for an item"""
+    item_id = request.args.get('item_id', type=int)
+    if not item_id:
+        return jsonify({"error": "Missing item_id"}), 400
+        
+    total = deeppockets_engine.get_total_count(item_id)
+    locations = deeppockets_engine.find_item(item_id)
+    
+    return jsonify({
+        "item_id": item_id,
+        "total_count": total,
+        "locations": locations
+    })
+
+# --- DeepPockets Endpoints ---
+
+@app.route('/api/deeppockets/search')
+def deeppockets_search():
+    query = request.args.get('q', '')
+    if not query:
+        return jsonify([])
+    results = deeppockets_engine.search_inventory(query)
+    return jsonify(results)
+
+@app.route('/api/deeppockets/incinerate', methods=['POST'])
+def deeppockets_incinerate():
+    data = request.get_json()
+    items = data.get("items", [])
+    
+    # Sync prices from Goblin
+    price_map = {}
+    for item_id, price_obj in goblin_engine.prices.items():
+        price_map[item_id] = float(price_obj.market_value)
+        
+    deeppockets_engine.set_prices(price_map)
+    
+    candidates = deeppockets_engine.calculate_value_density(items)
+    return jsonify({"candidates": candidates})
+
+@app.route('/api/deeppockets/remote')
+def deeppockets_remote():
+    main_char = request.args.get('main')
+    if not main_char:
+        return jsonify({"error": "Missing 'main' parameter"}), 400
+        
+    remote_items = deeppockets_engine.get_remote_stash(main_char)
+            
+    return jsonify({"items": remote_items[:50]}) # Limit to 50
+
+# --- Artificer Endpoints ---
+from artificer_engine import ArtificerEngine
+artificer_engine = ArtificerEngine(goblin_engine, deeppockets_engine)
+
+@app.route('/artificer')
+def artificer_page():
+    return render_template('artificer.html')
+
+@app.route('/api/artificer/concentration')
+def artificer_concentration():
+    data = artificer_engine.calculate_concentration_value()
+    return jsonify(data)
+
+@app.route('/api/artificer/supply_chain')
+def artificer_supply_chain():
+    recipe_id = request.args.get('recipe_id', type=int)
+    qty = request.args.get('qty', default=1, type=int)
+    
+    if not recipe_id:
+        # Default mock for demo
+        recipe_id = 370607 
+        
+    data = artificer_engine.solve_supply_chain(recipe_id, qty)
+    return jsonify(data)
+
+# --- Navigator Endpoints ---
+# Re-initialize Pathfinder with DeepPockets
+pathfinder_engine = PathfinderEngine(os.getenv('DATABASE_URL'), deeppockets_engine)
+pathfinder_engine.load_mock_data() # Ensure mock data is loaded
+
+@app.route('/navigator')
+def navigator_page():
+    return render_template('navigator.html')
+
+@app.route('/api/navigator/optimize', methods=['POST'])
+def navigator_optimize():
+    data = request.get_json()
+    current_zone = data.get('current_zone', 84) # Default Stormwind
+    quests = data.get('quests', []) # List of Quest IDs
+    destinations = data.get('destinations', []) # List of Zone IDs
+    
+    # 1. Check for Bank Stops
+    bank_stops = pathfinder_engine.check_quest_items(quests)
+    if bank_stops:
+        destinations.extend(bank_stops)
+        
+    # 2. Optimize Route
+    result = pathfinder_engine.optimize_route(current_zone, destinations)
+    
+    return jsonify({
+        "route": result,
+        "bank_stops_added": len(bank_stops) > 0,
+        "bank_zones": bank_stops
+    })
+
+# --- Synergy Endpoints ---
+from synergy_engine import SynergyEngine
+synergy_engine = SynergyEngine(goblin_engine, deeppockets_engine)
+
+@app.route('/synergy')
+def synergy_page():
+    return render_template('synergy.html')
+
+@app.route('/api/synergy/economy_check')
+def synergy_economy_check():
+    item_id = request.args.get('item_id', type=int)
+    if not item_id:
+        return jsonify({"error": "Missing item_id"}), 400
+    result = synergy_engine.economy_of_scale(item_id)
+    return jsonify(result)
+
+@app.route('/api/synergy/consumable_cost')
+def synergy_consumable_cost():
+    result = synergy_engine.cost_per_cast()
+    return jsonify(result)
+
+@app.route('/api/synergy/zookeeper', methods=['POST'])
+def synergy_zookeeper():
+    result = synergy_engine.the_zookeeper()
+    return jsonify(result)
+
+@app.route('/deeppockets')
+def deeppockets():
+    """DeepPockets UI"""
+    total_items = len(deeppockets_engine.inventory)
+    return render_template('deeppockets.html', total_items=total_items)
+
+# --- SKILLWEAVER & ARBITER MODULES ---
+from skillweaver_engine import SkillWeaverEngine
+from arbiter_engine import ArbiterEngine
+
+# Initialize Engines
+skillweaver_engine = SkillWeaverEngine()
+skillweaver_engine.start()
+
+arbiter_engine = ArbiterEngine(skillweaver_engine)
+arbiter_engine.start()
+
+@app.route('/api/arbiter/status')
+def arbiter_status():
+    """Get real-time performance stats"""
+    return jsonify(arbiter_engine.get_status())
 
 # --- DASHBOARD MODULE ---
 from dashboard_engine import DashboardEngine
@@ -866,10 +1292,119 @@ def sandbox_optimize():
     if not base_profile or not talent_strings:
         return jsonify({"error": "Missing base_profile or talent_strings"}), 400
         
-    winner = lottery_engine.run_comparison(base_profile, talent_strings)
-    if winner:
         return jsonify(winner)
     return jsonify({"error": "Optimization failed"}), 500
+
+# =============================================================================
+# PETWEAVER MODULE
+# =============================================================================
+
+@app.route('/api/petweaver/encounters')
+def petweaver_encounters():
+    """
+    Get list of available pet battle encounters
+    Returns: List of encounter IDs and names
+    """
+    try:
+        # TODO: Replace with real data from database
+        encounters = [
+            {"id": "squirt", "name": "Squirt", "zone": "Garrison", "difficulty": "Medium"},
+            {"id": "tiun", "name": "Ti'un the Wanderer", "zone": "Krasarang Wilds", "difficulty": "Hard"},
+            {"id": "akali", "name": "Aki the Chosen", "zone": "Vale of Eternal Blossoms", "difficulty": "Easy"},
+        ]
+        return jsonify({"encounters": encounters})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/petweaver/strategy/<encounter_id>')
+def petweaver_strategy(encounter_id):
+    """
+    Get strategy recommendation for a specific encounter
+    Query params:
+        encounter_id: Encounter identifier (e.g., "squirt", "tiun")
+    Returns: Team recommendations, scripts, and win rates
+    """
+    try:
+        # TODO: Integrate with genetic algorithm from app.py
+        # For now, return mock data structure
+        
+        mock_strategies = {
+            "squirt": {
+                "encounter_id": "squirt",
+                "encounter_name": "Squirt",
+                "recommended_teams": [
+                    {
+                        "team_id": 1,
+                        "pets": [
+                            {"species_id": 1387, "name": "Ikky", "level": 25, "quality": 4},
+                            {"species_id": 1266, "name": "MPD", "level": 25, "quality": 4},
+                            {"species_id": 0, "name": "Leveling Pet", "level": 1, "quality": 1}
+                        ],
+                        "win_rate": 0.95,
+                        "avg_rounds": 8,
+                        "script": "Ikky\nBlack Claw\nFlock\nSwap to MPD\nDecoy\nBombardment\nBombardment"
+                    }
+                ]
+            },
+            "tiun": {
+                "encounter_id": "tiun",
+                "encounter_name": "Ti'un the Wanderer",
+                "recommended_teams": [
+                    {
+                        "team_id": 1,
+                        "pets": [
+                            {"species_id": 1387, "name": "Ikky", "level": 25, "quality": 4},
+                            {"species_id": 1266, "name": "MPD", "level": 25, "quality": 4},
+                            {"species_id": 233, "name": "Cogblade Raptor", "level": 25, "quality": 4}
+                        ],
+                        "win_rate": 0.85,
+                        "avg_rounds": 12,
+                        "script": "Ikky\nBlack Claw\nFlock\nSwap to MPD\nDecoy\nBombardment\nSwap to Cogblade\nBatter\nBatter"
+                    }
+                ]
+            }
+        }
+        
+        strategy = mock_strategies.get(encounter_id, {
+            "encounter_id": encounter_id,
+            "encounter_name": encounter_id.title(),
+            "recommended_teams": []
+        })
+        
+        return jsonify(strategy)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/petweaver/validate_team', methods=['POST'])
+def petweaver_validate_team():
+    """
+    Validate if a team can defeat an encounter
+    POST body: {
+        "encounter_id": "squirt",
+        "pets": [species_id1, species_id2, species_id3]
+    }
+    Returns: Simulation results with win probability
+    """
+    try:
+        data = request.json
+        encounter_id = data.get('encounter_id')
+        pets = data.get('pets', [])
+        
+        # TODO: Run simulation with genetic algorithm
+        # For now, return mock validation
+        
+        return jsonify({
+            "valid": True,
+            "win_probability": 0.75,
+            "simulation_rounds": 10,
+            "notes": "Team appears viable. Consider breed optimization."
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+# =============================================================================
+# MAIN
+# =============================================================================
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5001))

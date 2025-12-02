@@ -1,0 +1,9 @@
+## Interface: 110000
+## Title: DeepPockets
+## Notes: Smart Inventory Manager for Holocron
+## Author: Holocron
+## Version: 1.0
+## SavedVariables: DeepPocketsDB
+
+
+DeepPockets.lua

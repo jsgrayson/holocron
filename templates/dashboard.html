@@ -23,6 +23,81 @@
 </div>
 
 <div class="row g-4">
+    <!-- The Arbiter -->
+    <div class="col-md-4">
+        <div class="card h-100 bg-dark text-white border-secondary widget-card"
+            onclick="window.location.href='/arbiter'">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0"><i class="fas fa-balance-scale me-2 text-primary"></i>The Arbiter</h5>
+                <span class="badge bg-primary">Live</span>
+            </div>
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="text-muted">Performance</span>
+                    <span class="badge bg-success" id="arbiter-perf">--%</span>
+                </div>
+                <div class="progress mb-3" style="height: 6px;">
+                    <div class="progress-bar bg-success" id="arbiter-bar" role="progressbar" style="width: 0%"></div>
+                </div>
+                <p class="text-center mb-0 text-muted">Mistakes: <span class="text-danger fw-bold"
+                        id="arbiter-mistakes">0</span></p>
+            </div>
+        </div>
+    </div>
+
+    <!-- DeepPockets -->
+    <div class="col-md-4">
+        <div class="card h-100 bg-dark text-white border-secondary widget-card"
+            onclick="window.location.href='/deeppockets'">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0"><i class="fas fa-box-open me-2 text-warning"></i>DeepPockets</h5>
+                <span class="badge bg-warning text-dark">Inventory</span>
+            </div>
+            <div class="card-body">
+                <h5 class="text-center mb-1">{{ summary.modules.utility.transmog }}</h5>
+                <p class="text-muted text-center mb-3">Mog Items</p>
+                <a href="/deeppockets" class="btn btn-outline-warning w-100">Manage Bags</a>
+            </div>
+        </div>
+    </div>
+    <!-- The Arbiter -->
+    <div class="col-md-4">
+        <div class="card h-100 bg-dark text-white border-secondary widget-card"
+            onclick="window.location.href='/arbiter'">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0"><i class="fas fa-balance-scale me-2 text-primary"></i>The Arbiter</h5>
+                <span class="badge bg-primary">Live</span>
+            </div>
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="text-muted">Performance</span>
+                    <span class="badge bg-success" id="arbiter-perf">--%</span>
+                </div>
+                <div class="progress mb-3" style="height: 6px;">
+                    <div class="progress-bar bg-success" id="arbiter-bar" role="progressbar" style="width: 0%"></div>
+                </div>
+                <p class="text-center mb-0 text-muted">Mistakes: <span class="text-danger fw-bold"
+                        id="arbiter-mistakes">0</span></p>
+            </div>
+        </div>
+    </div>
+
+    <!-- DeepPockets -->
+    <div class="col-md-4">
+        <div class="card h-100 bg-dark text-white border-secondary widget-card"
+            onclick="window.location.href='/deeppockets'">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0"><i class="fas fa-box-open me-2 text-warning"></i>DeepPockets</h5>
+                <span class="badge bg-warning text-dark">Inventory</span>
+            </div>
+            <div class="card-body">
+                <h5 class="text-center mb-1">{{ summary.modules.utility.transmog }}</h5>
+                <p class="text-muted text-center mb-3">Mog Items</p>
+                <a href="/deeppockets" class="btn btn-outline-warning w-100">Manage Bags</a>
+            </div>
+        </div>
+    </div>
+
     <!-- Pathfinder -->
     <div class="col-md-4">
         <div class="card h-100 bg-dark text-white border-secondary">

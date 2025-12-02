@@ -18,8 +18,9 @@ class PathfinderEngine:
     - Character-specific abilities (Mage teleports, etc.)
     """
     
-    def __init__(self, db_url: str):
+    def __init__(self, db_url: str, deeppockets_engine=None):
         self.db_url = db_url
+        self.deeppockets = deeppockets_engine
         self.graph = nx.DiGraph()  # Directed graph for one-way connections
         self.zones = {}  # zone_id -> {name, expansion}
         
@@ -61,16 +62,125 @@ class PathfinderEngine:
         self.zones[1978] = {"name": "Dragon Isles", "expansion": "Dragonflight"}
         self.zones[2022] = {"name": "The Waking Shores", "expansion": "Dragonflight"}
         self.zones[2023] = {"name": "Ohn'ahran Plains", "expansion": "Dragonflight"}
+        self.zones[2024] = {"name": "The Azure Span", "expansion": "Dragonflight"}
+        self.zones[2025] = {"name": "Thaldraszus", "expansion": "Dragonflight"}
+        self.zones[-1] = {"name": "Bank (Stormwind)", "expansion": "Classic"} # Mock Bank Zone
         
         # Add nodes to graph
         for zid, data in self.zones.items():
             self.graph.add_node(zid, **data)
             
-        # Add some edges
-        self.graph.add_edge(84, 1670, method="PORTAL", time=15, requirements="Mage")
+        # Add some edges (Mocking a connected world)
+        # Hubs
+        self.graph.add_edge(84, 1670, method="PORTAL", time=15, requirements="")
         self.graph.add_edge(1670, 84, method="PORTAL", time=15, requirements="")
+        self.graph.add_edge(84, 1978, method="BOAT", time=120, requirements="")
+        self.graph.add_edge(1978, 84, method="BOAT", time=120, requirements="")
+        
+        # Dragon Isles connections
+        di_zones = [1978, 2022, 2023, 2024, 2025]
+        for i in range(len(di_zones)):
+            for j in range(len(di_zones)):
+                if i != j:
+                    self.graph.add_edge(di_zones[i], di_zones[j], method="DRAGONRIDING", time=45, requirements="")
+                    
+        # Bank connection
+        self.graph.add_edge(84, -1, method="WALK", time=30, requirements="")
+        self.graph.add_edge(-1, 84, method="WALK", time=30, requirements="")
         
         print(f"✓ Mock Graph built: {self.graph.number_of_nodes()} zones")
+
+    def optimize_route(self, start_zone: int, destinations: List[int]) -> Dict:
+        """
+        Solve TSP for the given destinations using Nearest Neighbor algorithm.
+        """
+        if start_zone not in self.graph:
+            return {"success": False, "error": f"Start zone {start_zone} not found"}
+            
+        # Validate destinations
+        valid_dests = [d for d in destinations if d in self.graph]
+        if len(valid_dests) != len(destinations):
+            print(f"Warning: Some destinations were invalid and ignored.")
+            
+        route = [start_zone]
+        current_node = start_zone
+        unvisited = set(valid_dests)
+        if start_zone in unvisited:
+            unvisited.remove(start_zone)
+            
+        total_time = 0
+        steps_details = []
+        
+        while unvisited:
+            nearest_node = None
+            min_dist = float('inf')
+            best_path_segment = None
+            
+            for node in unvisited:
+                # Find shortest path to this node
+                try:
+                    path_result = self.find_shortest_path(current_node, node)
+                    if path_result["success"]:
+                        dist = path_result["total_time"]
+                        if dist < min_dist:
+                            min_dist = dist
+                            nearest_node = node
+                            best_path_segment = path_result
+                except Exception:
+                    continue
+            
+            if nearest_node is None:
+                # Cannot reach remaining nodes
+                break
+                
+            # Add segment to route
+            route.append(nearest_node)
+            unvisited.remove(nearest_node)
+            total_time += min_dist
+            current_node = nearest_node
+            
+            steps_details.append({
+                "from": best_path_segment["source"],
+                "to": best_path_segment["destination"],
+                "time": best_path_segment["total_time"],
+                "method": best_path_segment["steps"][0]["method"] if best_path_segment["steps"] else "Walk"
+            })
+            
+        return {
+            "success": True,
+            "route_order": route,
+            "total_time": total_time,
+            "segments": steps_details
+        }
+
+    def check_quest_items(self, quest_ids: List[int]) -> List[int]:
+        """
+        Check if items required for these quests are in the bank.
+        Returns a list of zone_ids to add to the route (e.g., Bank).
+        """
+        if not self.deeppockets:
+            return []
+            
+        # Mock Quest DB (Quest ID -> Item ID)
+        quest_items = {
+            123: 194820, # Quest 123 needs Hochenblume
+            456: 200111  # Quest 456 needs Resonant Crystal
+        }
+        
+        extra_stops = set()
+        
+        for qid in quest_ids:
+            item_id = quest_items.get(qid)
+            if item_id:
+                # Check DeepPockets
+                locations = self.deeppockets.search_inventory(str(item_id))
+                for loc in locations:
+                    if loc['container'] == 'Bank' or loc['container'] == 'Reagent Bank':
+                        # Item is in bank! Add Bank Stop.
+                        # Assuming Bank is Zone -1 for now (or nearest city)
+                        extra_stops.add(-1) 
+                        
+        return list(extra_stops)
 
     def load_real_data(self):
         """Load real player data from SavedInstances.json"""

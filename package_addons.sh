@@ -32,6 +32,7 @@ ROOT_DIR=".."
 package_addon "SkillWeaver" "$ROOT_DIR/skillweaver/SkillWeaver"
 package_addon "PetWeaver" "$ROOT_DIR/petweaver/PetWeaver"
 package_addon "HolocronViewer" "$ROOT_DIR/holocron/HolocronViewer"
+package_addon "DeepPockets" "$ROOT_DIR/holocron/DeepPockets"
 
 echo "----------------------------------------"
 echo "🎉 Packaging Complete!"

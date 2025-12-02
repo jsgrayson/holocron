@@ -56,61 +56,116 @@ class WarriorRotation:
     def get_suggestion(self):
         # 1. Execute (High Priority)
         if self.state.target_hp_pct < 0.20:
-            return "EXECUTE", (128, 0, 128) # Purple
+            return "EXECUTE", (128, 0, 128), 5308 # Purple, SpellID
             
         # 2. Rampage (Resource Dump)
         if self.state.rage >= 80:
-            return "RAMPAGE", (255, 0, 0) # Red
+            return "RAMPAGE", (255, 0, 0), 184367 # Red, SpellID
             
         # 3. Bloodthirst (Builder)
-        return "BLOODTHIRST", (0, 255, 0) # Green
+        return "BLOODTHIRST", (0, 255, 0), 23881 # Green, SpellID
 
-# --- LOG PARSER ---
-def follow(file):
-    file.seek(0, os.SEEK_END)
-    while True:
-        line = file.readline()
-        if not line:
-            time.sleep(0.05)
-            continue
-        yield line
+# --- ENGINE ---
+class SkillWeaverEngine:
+    def __init__(self):
+        self.state = GameState()
+        self.rotation = WarriorRotation(self.state)
+        self.running = False
+        self.thread = None
+        self.current_suggestion = None
+        self.mistakes = []
 
-def run_engine():
-    if not os.path.exists(LOG_PATH):
-        print(f"[SkillWeaver] Log not found: {LOG_PATH}")
-        return
+    def start(self):
+        if self.running: return
+        self.running = True
+        self.thread = threading.Thread(target=self._run_loop, daemon=True)
+        self.thread.start()
+        print(f"[SkillWeaver] Engine Running. Watching: {LOG_PATH}")
 
-    state = GameState()
-    rotation = WarriorRotation(state)
-    
-    print(f"[SkillWeaver] Engine Running. Watching: {LOG_PATH}")
-    
-    with open(LOG_PATH, 'r', encoding='utf-8', errors='ignore') as f:
-        for line in follow(f):
-            # 1. Parse Resources (SPELL_ENERGIZE)
-            # Log format: ...SPELL_ENERGIZE,SourceGUID,SourceName,DestGUID,DestName,SpellID,SpellName,Unknown,Amount,PowerType...
-            if "SPELL_ENERGIZE" in line and PLAYER_NAME in line:
-                # Heuristic parsing
-                parts = line.split(',')
-                try:
-                    amount = int(parts[-2]) # Usually near end
-                    state.update_resource(amount, "Rage")
-                except:
-                    pass
-            
-            # 2. Parse Spells (SPELL_CAST_SUCCESS) -> Cooldowns
-            if "SPELL_CAST_SUCCESS" in line and PLAYER_NAME in line:
-                # Reset Rage on spender?
-                if "Rampage" in line:
-                    state.rage = max(0, state.rage - 80)
-                    print(f"[State] Rampage Cast. Rage: {state.rage}")
+    def stop(self):
+        self.running = False
+        if self.thread:
+            self.thread.join()
 
-            # 3. Evaluate Rotation
-            action, color = rotation.get_suggestion()
-            
-            # Output (Debounced in real app)
-            # print(f"[Coach] Suggestion: {action}")
-            # corsair.flash_key(action, *color)
+    def get_recommendation(self):
+        """Returns current recommendation for Arbiter"""
+        if not self.current_suggestion:
+            return None
+        
+        name, color, spell_id = self.current_suggestion
+        return {
+            "spell_id": spell_id,
+            "spell_name": name
+        }
+
+    def report_mistake(self, actual_spell_id, expected_spell_id):
+        """Feedback from Arbiter"""
+        print(f"[SkillWeaver] Feedback: Mistake detected! Cast {actual_spell_id}, Expected {expected_spell_id}")
+        self.mistakes.append({
+            "timestamp": time.time(),
+            "actual": actual_spell_id,
+            "expected": expected_spell_id
+        })
+
+    def _follow(self, file):
+        file.seek(0, os.SEEK_END)
+        while self.running:
+            line = file.readline()
+            if not line:
+                time.sleep(0.05)
+                continue
+            yield line
+
+    def _run_loop(self):
+        if not os.path.exists(LOG_PATH):
+            print(f"[SkillWeaver] Log not found: {LOG_PATH}. Using Mock Mode.")
+            self._mock_loop()
+            return
+
+        with open(LOG_PATH, 'r', encoding='utf-8', errors='ignore') as f:
+            for line in self._follow(f):
+                self._process_line(line)
+
+    def _mock_loop(self):
+        """Simulate rotation for testing"""
+        while self.running:
+            time.sleep(1)
+            # Simulate rage gain
+            self.state.update_resource(10, "Rage")
+            self._update_suggestion()
+
+    def _process_line(self, line):
+        # 1. Parse Resources (SPELL_ENERGIZE)
+        if "SPELL_ENERGIZE" in line and PLAYER_NAME in line:
+            parts = line.split(',')
+            try:
+                amount = int(parts[-2])
+                self.state.update_resource(amount, "Rage")
+            except:
+                pass
+        
+        # 2. Parse Spells (SPELL_CAST_SUCCESS)
+        if "SPELL_CAST_SUCCESS" in line and PLAYER_NAME in line:
+            if "Rampage" in line:
+                self.state.rage = max(0, self.state.rage - 80)
+                print(f"[State] Rampage Cast. Rage: {self.state.rage}")
+
+        # 3. Evaluate Rotation
+        self._update_suggestion()
+
+    def _update_suggestion(self):
+        action, color, spell_id = self.rotation.get_suggestion()
+        self.current_suggestion = (action, color, spell_id)
+        
+        # Output (Debounced in real app)
+        # print(f"[Coach] Suggestion: {action}")
+        # corsair.flash_key(action, *color)
 
 if __name__ == "__main__":
-    run_engine()
+    engine = SkillWeaverEngine()
+    engine.start()
+    try:
+        while True:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        engine.stop()
