@@ -79,6 +79,14 @@ class GoblinEngine:
     
     HISTORY_FILE = "goblin_history.json"
     
+    TITLES = [
+        (90, "Trade Prince"),
+        (75, "Baron"),
+        (50, "Merchant"),
+        (25, "Peddler"),
+        (0, "Peon")
+    ]
+    
     def __init__(self, tsm_engine=None):
         self.tsm_engine = tsm_engine
         self.prices = {}  # {item_id: ItemPrice}
@@ -545,11 +553,10 @@ class GoblinEngine:
 class GoblinEngineExpanded(GoblinEngine):
     def __init__(self):
         super().__init__()
-        self.goblin_score = GoblinScore()
         
     def get_score(self) -> Dict:
         # Mock inputs for now
-        return self.goblin_score.calculate_score(15400, 25)
+        return self.calculate_score(15400, 25)
 
 if __name__ == "__main__":
     # Test the engine

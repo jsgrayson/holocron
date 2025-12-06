@@ -5,4 +5,12 @@
 ## Version: 1.0
 ## SavedVariables: PetWeaverDB
 
+Libs\MinimapButton.lua
+Libs\OptionsPanel.lua
+
+encounters_data.lua
+teams_data.lua
+ScriptParser.lua
+BattleEngine.lua
 PetWeaver.lua
+

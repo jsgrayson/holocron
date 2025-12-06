@@ -1,3 +1,5 @@
+import sys
+print("DEBUG: Starting server.py...", file=sys.stderr)
 import os
 import json
 import psycopg2
@@ -430,10 +432,10 @@ def utility():
                           missing_mounts=missing_mounts)
 
 # --- GOBLIN BRAIN MODULE ---
-from goblin_engine import GoblinEngine, ItemType
+from goblin_engine import GoblinEngine, ItemType, GoblinEngineExpanded
 
 # Initialize Goblin engine once
-goblin_engine = GoblinEngine()
+goblin_engine = GoblinEngineExpanded()
 goblin_engine.load_mock_data()
 
 @app.route('/api/goblin/dashboard')
@@ -738,12 +740,13 @@ from codex_engine import CodexEngine, Role
 
 # Initialize Codex engine once
 codex_engine = CodexEngine()
-# Try to load real data, fallback to mock if needed (handled inside load_real_data)
-try:
-    codex_engine.load_real_data()
-except Exception as e:
-    print(f"Error loading real data: {e}. Falling back to mock.")
-    codex_engine.load_mock_data()
+# Use mock data by default to avoid scraping on startup
+codex_engine.load_from_wowhead_json()
+# try:
+#     codex_engine.load_real_data()
+# except Exception as e:
+#     print(f"Error loading real data: {e}. Falling back to mock.")
+#     codex_engine.load_mock_data()
 
 @app.route('/api/codex/instance/<int:instance_id>')
 def codex_instance(instance_id):
@@ -754,6 +757,7 @@ def codex_instance(instance_id):
     return jsonify(instance)
 
 @app.route('/api/codex/encounter/<int:encounter_id>')
+@app.route('/api/codex/encounter/<int:encounter_id>')
 def codex_encounter(encounter_id):
     """Get encounter details"""
     encounter = codex_engine.get_encounter(encounter_id)
@@ -761,7 +765,107 @@ def codex_encounter(encounter_id):
         return jsonify({"error": "Encounter not found"}), 404
     return jsonify(encounter)
 
+@app.route('/api/codex/quest/<int:quest_id>')
+def codex_quest(quest_id):
+    """Get quest details and status"""
+    char_guid = request.args.get('character_guid') # Optional: Check completion for specific char
+    quest = codex_engine.get_quest(quest_id, char_guid)
+    if not quest:
+        return jsonify({"error": "Quest not found"}), 404
+    return jsonify(quest)
 
+@app.route('/api/codex/campaign')
+def codex_campaign():
+    """Get campaign progress"""
+    campaign_name = request.args.get('name', 'The War Within')
+    char_guid = request.args.get('character_guid')
+    
+    if not char_guid:
+        return jsonify({"error": "character_guid required"}), 400
+        
+    progress = codex_engine.get_campaign_progress(campaign_name, char_guid)
+    return jsonify(progress)
+    """Get encounter details"""
+    encounter = codex_engine.get_encounter(encounter_id)
+    if not encounter:
+        return jsonify({"error": "Encounter not found"}), 404
+    return jsonify(encounter)
+
+@app.route('/codex')
+def codex_page():
+    """Render the Codex Dashboard"""
+    # Fetch all characters
+    characters = codex_engine.get_all_characters()
+    
+    # Define Campaigns to Track
+    # In the future, this could be dynamic or user-configured
+    campaign_names = ["The War Within", "Dragonflight"]
+    campaign_columns = [{"name": c} for c in campaign_names]
+    
+    matrix = []
+    campaign_summaries = {} # Map name -> {progress, status}
+    
+    for char in characters:
+        char_row = {
+            "character": {
+                "name": char["name"], 
+                "realm": char["realm"], 
+                "class": char["class"]
+            },
+            "campaigns": []
+        }
+        
+        for camp_name in campaign_names:
+            progress = codex_engine.get_campaign_progress(camp_name, char["character_guid"])
+            
+            # Determine state/status
+            state = "locked"
+            status_text = "Not Started"
+            percent = 0
+            step_label = "0/?"
+            
+            if "error" not in progress:
+                percent = progress["percent"]
+                step_label = progress["progress"] # "3/5"
+                
+                if percent == 100:
+                    state = "done"
+                    status_text = "Completed"
+                elif percent > 0:
+                    state = "in_progress"
+                    # Find next quest
+                    for q in progress["quests"]:
+                        if not q["completed"]:
+                            status_text = f"Next: {q['title']}"
+                            break
+                else:
+                    state = "locked" # Or just not started
+                    status_text = "Not Started"
+                
+                # Update Summary (Max Progress)
+                if camp_name not in campaign_summaries or percent > campaign_summaries[camp_name]["percent"]:
+                    campaign_summaries[camp_name] = {
+                        "name": camp_name,
+                        "progress": percent,
+                        "status": status_text
+                    }
+            
+            char_row["campaigns"].append({
+                "state": state,
+                "step_label": step_label,
+                "percent": percent,
+                "status_text": status_text
+            })
+            
+        matrix.append(char_row)
+    
+    # Convert summaries to list
+    campaigns_list = list(campaign_summaries.values())
+    if not campaigns_list:
+        # Fallback if no data found
+        campaigns_list = [{"name": c, "progress": 0, "status": "No Data"} for c in campaign_names]
+    
+    return render_template('codex.html', campaigns=campaigns_list, matrix=matrix, campaign_columns=campaign_columns)
 # --- VAULT VISUALIZER ---
 from vault_engine import VaultEngine, VaultCategory
 
@@ -965,10 +1069,10 @@ from arbiter_engine import ArbiterEngine
 
 # Initialize Engines
 skillweaver_engine = SkillWeaverEngine()
-skillweaver_engine.start()
+# skillweaver_engine.start()  # DISABLED: Causes blocking on startup, preventing Flask from serving requests
 
 arbiter_engine = ArbiterEngine(skillweaver_engine)
-arbiter_engine.start()
+# arbiter_engine.start()  # DISABLED: Same issue
 
 @app.route('/api/arbiter/status')
 def arbiter_status():
@@ -1297,6 +1401,10 @@ def sandbox_optimize():
 
 # =============================================================================
 # PETWEAVER MODULE
+
+@app.route('/petweaver')
+def petweaver_dashboard():
+    return render_template('petweaver.html')
 # =============================================================================
 
 @app.route('/api/petweaver/encounters')
@@ -1406,9 +1514,7 @@ def petweaver_validate_team():
 # MAIN
 # =============================================================================
 
-if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 5001))
-    app.run(host='0.0.0.0', port=port, debug=True)
+
 
 def fetch_completed_for_guid(guid):
     """
@@ -1576,31 +1682,33 @@ def diplomat():
     recommendations = diplomat_engine.generate_recommendations()
     
     # Format for template
-    factions_data = []
-    for opp in recommendations['opportunities']:
-        factions_data.append({
-            "name": opp['faction_name'],
-            "current": opp['current'],
-            "max": opp['max'],
-            "percent": opp['percent'],
-            "is_close": opp['percent'] >= 80,
-            "priority": opp['priority']
-        })
+    """Render the Diplomat Dashboard"""
+    # Get Recommendations
+    recommendations = diplomat_engine.generate_recommendations()
     
-    # Get top WQ recommendations
+    # Get Matrix
+    matrix = diplomat_engine.get_reputation_matrix()
+    
+    # Format data for template
+    factions_data = recommendations["opportunities"]
     sniper_list = []
-    for opp in recommendations['opportunities']:
-        for quest in opp.get('recommended_quests', [])[:3]:  # Top 3 per faction
-            sniper_list.append({
-                "faction": opp['faction_name'],
-                "quest": quest['title'],
-                "zone": quest['zone'],
-                "reward": f"{quest['rep_reward']} Rep",
-                "efficiency": f"{quest['efficiency']} rep/min ({quest['efficiency_score']})",
-            "gold": f"{quest['gold']}g"
-            })
     
-    return render_template('diplomat.html', factions=factions_data, sniper=sniper_list)
+    # Flatten recommended quests for the sniper view
+    for opp in factions_data:
+        for quest in opp.get("recommended_quests", []):
+            sniper_list.append({
+                "zone": quest["zone"],
+                "quest": quest["title"],
+                "reward": f"{quest['rep_reward']} Rep",
+                "efficiency": f"{quest['efficiency']} rep/min",
+                "assigned_char": "Any", # TODO: Assign to specific char
+                "efficiency_score": quest["efficiency_score"]
+            })
+            
+    # Sort sniper list by efficiency
+    sniper_list.sort(key=lambda x: float(x["efficiency"].split()[0]), reverse=True)
+    
+    return render_template('diplomat.html', factions=factions_data, sniper=sniper_list, matrix=matrix)
 
 @app.route('/api/diplomat/emissaries')
 def diplomat_emissaries():
@@ -1827,7 +1935,7 @@ tsm_engine.load_data()
 
 # --- GOBLIN MODULE ---
 from goblin_engine import GoblinEngine
-goblin_engine = GoblinEngine(tsm_engine=tsm_engine)
+goblin_engine = GoblinEngineExpanded()
 goblin_engine.load_mock_data()
 
 @app.route('/api/goblin')
@@ -1944,8 +2052,85 @@ def api_commander_cooldowns():
             }
         ])
 
+# ==========================================
+# PROFESSION & CRAFTING API
+# ==========================================
+
+from intelligent_profession_engine import IntelligentProfessionEngine
+from recommend_specs import generate_spec_guide
+
+prof_engine = IntelligentProfessionEngine(goblin_engine=goblin_engine)
+
+@app.route('/api/profession/guide/<character>/<profession>')
+def api_profession_guide(character, profession):
+    """Get dynamic leveling guide for character"""
+    try:
+        # Get current skill from DB
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT skill_level, max_skill 
+            FROM goblin.professions p
+            JOIN holocron.characters c ON p.character_guid = c.character_guid
+            WHERE c.name = %s AND p.profession_name = %s
+        """, (character, profession))
+        row = cur.fetchone()
+        cur.close()
+        conn.close()
+        
+        if not row:
+            return jsonify({"error": "Character/Profession not found"}), 404
+            
+        current_skill = row[0]
+        max_skill = row[1]
+        
+        # Generate dynamic guide
+        guide = prof_engine.generate_dynamic_leveling_guide(
+            character, profession, current_skill, max_skill
+        )
+        
+        return jsonify(guide)
+    except Exception as e:
+        print(f"Error generating guide: {e}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/profession/specs/<character>/<profession>')
+def api_profession_specs(character, profession):
+    """Get specialization recommendations"""
+    try:
+        guide = generate_spec_guide(character, profession)
+        return jsonify(guide)
+    except Exception as e:
+        print(f"Error generating spec guide: {e}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/profession/intelligent/<character>/<profession>')
+def api_intelligent_recommendations(character, profession):
+    """Get intelligent crafting recommendations"""
+    try:
+        # Get skill level
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT skill_level 
+            FROM goblin.professions p
+            JOIN holocron.characters c ON p.character_guid = c.character_guid
+            WHERE c.name = %s AND p.profession_name = %s
+        """, (character, profession))
+        row = cur.fetchone()
+        cur.close()
+        conn.close()
+        
+        skill = row[0] if row else 1
+        
+        recs = prof_engine.recommend_recipes_intelligent(character, profession, skill)
+        return jsonify(recs)
+    except Exception as e:
+        print(f"Error getting recommendations: {e}")
+        return jsonify({"error": str(e)}), 500
+
 if __name__ == '__main__':
     # Start the Flask server
-    PORT = 5002
+    PORT = 5005
     print(f"Starting Holocron Server on port {PORT}...")
-    app.run(host='0.0.0.0', port=PORT, debug=True)
+    app.run(host='0.0.0.0', port=PORT, debug=False)

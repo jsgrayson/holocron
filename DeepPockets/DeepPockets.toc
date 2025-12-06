@@ -1,9 +1,16 @@
-## Interface: 110000
+## Interface: 110002
 ## Title: DeepPockets
-## Notes: Smart Inventory Manager for Holocron
-## Author: Holocron
-## Version: 1.0
+## Notes: Smart inventory management
+## Author: jsgrayson
+## Version: 1.0.0
 ## SavedVariables: DeepPocketsDB
+## DefaultState: enabled
+## Dependencies: HolocronCore
 
+Libs\MinimapButton.lua
+Libs\OptionsPanel.lua
 
+SearchFilter.lua
+Settings.lua
 DeepPockets.lua
+

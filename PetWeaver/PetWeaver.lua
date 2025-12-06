@@ -1,1452 +1,1164 @@
--- PetWeaver.lua - Advanced Pet Battle Assistant
--- Author: Holocron
--- Version: 2.0
+-- PetWeaver.lua (Native WoW API Version)
+local addonName, addon = ...
+print("|cff00ff00PetWeaver:|r Native Core Loaded.")
 
-local ADDON_NAME = "PetWeaver"
-print(ADDON_NAME .. ": Loading...")
-
--- ============================================================================
--- Saved Variables & Initialization
--- ============================================================================
-
+-- 1. SavedVariables Setup
 PetWeaverDB = PetWeaverDB or {
-    teams = {},
-    scripts = {},
-    apiQueue = {},    -- New: API Request Queue
-    apiResponse = {}, -- New: API Response Storage
-    settings = {
-        framePos = {},
-        currentTab = "Battle",
-        showInBattle = true,
-        showWithJournal = true,
-    }
-}
-
-PetWeaver.Filters = {
-    family = nil, -- 1-10
-    level25 = false,
-    strongVs = nil, -- 1-10 (Family ID)
-}
-
--- ============================================================================
--- Style Constants
--- ============================================================================
-
-local STYLE = {
-    colors = {
-        background = {0, 0, 0, 0.95},
-        border = {0.3, 0.3, 0.3, 1},
-        tabActive = {0.2, 0.6, 0.9, 1},
-        tabInactive = {0.2, 0.2, 0.2, 0.8},
-        header = {0.9, 0.8, 0.5, 1},
-        text = {1, 1, 1, 1},
-        health = {0, 1, 0, 1},
-        healthLow = {1, 0, 0, 1},
-        enemy = {1, 0.3, 0.3, 1},
-        ally = {0.3, 0.9, 1, 1},
+    settings = { 
+        uiScale = 1.0,
+        autoBattle = false,
+        autoLoadTeams = true,
+        showCoachMode = true
     },
-    fonts = {
-        title = "GameFontNormalLarge",
-        header = "GameFontNormal",
-        text = "GameFontHighlightSmall",
-        small = "GameFontNormalSmall",
-    }
+    teams = {},
+    encounterDatabase = {},
+    battleHistory = {},
+    version = "1.0"
 }
 
--- ============================================================================
--- Utility Functions
--- ============================================================================
-
-local function CreateStyledButton(parent, text, width, height)
-    local btn = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
-    btn:SetSize(width or 80, height or 22)
-    btn:SetText(text)
-    return btn
-end
-
-local function CreateScrollFrame(parent, width, height)
-    local scroll = CreateFrame("ScrollFrame", nil, parent, "UIPanelScrollFrameTemplate")
-    scroll:SetSize(width, height)
+-- Load default teams on first launch
+local function LoadDefaultTeams()
+    print("|cff00ff00PetWeaver:|r LoadDefaultTeams() called")
+    print("|cff00ff00PetWeaver:|r Current teams count:", #PetWeaverDB.teams)
+    print("|cff00ff00PetWeaver:|r PetWeaver_DefaultTeams available:", PetWeaver_DefaultTeams ~= nil)
     
-    local content = CreateFrame("Frame", nil, scroll)
-    content:SetSize(width - 20, 1)
-    scroll:SetScrollChild(content)
-    
-    scroll.content = content
-    return scroll
-end
-
-local function GetHealthColor(current, max)
-    if not current or not max or max == 0 then return unpack(STYLE.colors.health) end
-    local percent = current / max
-    if percent > 0.5 then
-        return unpack(STYLE.colors.health)
-    elseif percent > 0.25 then
-        return 1, 1, 0, 1
+    if #PetWeaverDB.teams == 0 and PetWeaver_DefaultTeams then
+        print("|cff00ff00PetWeaver:|r Loading default teams...")
+        for _, teamData in ipairs(PetWeaver_DefaultTeams) do
+            -- Deep copy the team
+            local team = {
+                name = teamData.name,
+                enemyName = teamData.encounterName, -- Map encounterName to enemyName for internal consistency
+                isLeveling = teamData.isLeveling,
+                pets = {},
+                script = teamData.script or {}
+            }
+            
+            for i, speciesID in ipairs(teamData.pets) do
+                table.insert(team.pets, {
+                    speciesID = speciesID,
+                    name = "", -- Name will be fetched later or is not needed for ID-based loading
+                    abilities = {}, -- Abilities will be loaded from saved sets or defaults
+                    slot = i,
+                    isLeveling = (speciesID == 0),
+                    level = 25
+                })
+            end
+            
+            table.insert(PetWeaverDB.teams, team)
+        end
+        print("|cff00ff00PetWeaver:|r Loaded " .. #PetWeaverDB.teams .. " default teams")
     else
-        return unpack(STYLE.colors.healthLow)
+        print("|cff00ff00PetWeaver:|r Skipping load - teams already exist or data not available")
+    end
+    
+    -- Load encounter database
+    if PetWeaver_Encounters then
+        print("|cff00ff00PetWeaver:|r Loading encounter database...")
+        local count = 0
+        for encounterName, encounterData in pairs(PetWeaver_Encounters) do
+            PetWeaverDB.encounterDatabase[encounterName] = encounterData
+            count = count + 1
+        end
+        print("|cff00ff00PetWeaver:|r Loaded " .. count .. " encounters")
+    else
+        print("|cff00ff00PetWeaver:|r No encounters data found")
     end
 end
 
-local function GetQualityColor(quality)
-    local colors = {
-        [0] = {0.6, 0.6, 0.6, 1}, -- Poor
-        [1] = {1, 1, 1, 1},        -- Common (White)
-        [2] = {0.1, 1, 0.1, 1},    -- Uncommon (Green)
-        [3] = {0.2, 0.5, 1, 1},    -- Rare (Blue)
-        [4] = {0.8, 0.3, 1, 1},    -- Epic (Purple)
-        [5] = {1, 0.5, 0, 1},      -- Legendary (Orange)
-    }
-    return colors[quality] or colors[1]
-end
 
-local function GetStrongVs(familyID)
-    -- 1:Humanoid, 2:Dragonkin, 3:Flying, 4:Undead, 5:Critter, 6:Magic, 7:Elemental, 8:Beast, 9:Aquatic, 10:Mechanical
-    -- Returns the family ID that this family is strong AGAINST (deals +50% dmg)
-    local strongVs = {
-        [1] = 2,  -- Humanoid > Dragonkin
-        [2] = 6,  -- Dragonkin > Magic
-        [3] = 9,  -- Flying > Aquatic
-        [4] = 1,  -- Undead > Humanoid
-        [5] = 4,  -- Critter > Undead
-        [6] = 3,  -- Magic > Flying
-        [7] = 10, -- Elemental > Mechanical
-        [8] = 5,  -- Beast > Critter
-        [9] = 7,  -- Aquatic > Elemental
-        [10] = 8, -- Mechanical > Beast
-    }
-    return strongVs[familyID]
-end
+-- 2. Event Handling
+local eventFrame = CreateFrame("Frame")
+eventFrame:RegisterEvent("PLAYER_LOGIN")
+eventFrame:RegisterEvent("ADDON_LOADED")
+eventFrame:RegisterEvent("PET_BATTLE_OPENING_START")
+eventFrame:RegisterEvent("PET_BATTLE_TURN_STARTED")
+eventFrame:RegisterEvent("PET_BATTLE_OVER")
 
-local function IsTeamStrongVs(team, targetFamily)
-    if not targetFamily then return true end
-    -- Check if any pet in team has an ability strong against targetFamily
-    -- For MVP, we check if the pet's FAMILY is strong against targetFamily (defensively? No, offensively usually)
-    -- Actually, usually "Strong Vs" means "Takes less damage from" or "Deals more damage to".
-    -- Let's assume "Deals more damage to".
-    -- So we want pets whose attacks are strong against targetFamily.
-    -- Without ability data, we can use Pet Family as a proxy (e.g. Humanoid pets usually have Humanoid attacks).
-    
-    for _, pet in ipairs(team.pets) do
-        -- We don't have pet family ID stored in the team data currently!
-        -- We need to fetch it or store it.
-        -- C_PetJournal.GetPetInfoBySpeciesID returns petType (family).
-        local _, _, _, _, _, _, _, _, _, petType = C_PetJournal.GetPetInfoBySpeciesID(pet.speciesID)
-        if petType then
-             -- Does this pet type deal bonus damage to targetFamily?
-             -- Check if GetStrongVs(petType) == targetFamily
-             if GetStrongVs(petType) == targetFamily then
-                 return true
-             end
+
+eventFrame:SetScript("OnEvent", function(self, event, ...)
+    if event == "ADDON_LOADED" and ... == addonName then
+        -- Initialize SavedVariables first
+        PetWeaverDB = PetWeaverDB or { settings = {}, teams = {}, encounterDatabase = {}, battleHistory = {} }
+        
+        -- Debug: Check if data files loaded
+        print("|cff00ff00PetWeaver:|r Addon loaded, checking data files...")
+        print("|cff00ff00PetWeaver:|r PetWeaver_DefaultTeams exists:", PetWeaver_DefaultTeams ~= nil)
+        print("|cff00ff00PetWeaver:|r PetWeaver_Encounters exists:", PetWeaver_Encounters ~= nil)
+        
+        if PetWeaver_DefaultTeams then
+            print("|cff00ff00PetWeaver:|r Found", #PetWeaver_DefaultTeams, "default teams in data file")
+        end
+        
+        -- Load default teams and encounters
+        LoadDefaultTeams()
+        print("|cff00ff00PetWeaver:|r Ready. Current teams:", #PetWeaverDB.teams)
+        
+    elseif event == "PLAYER_LOGIN" then
+        -- Initialize Battle UI after player logs in
+        addon:InitBattleUI()
+        print("|cff00ff00PetWeaver:|r Battle UI initialized")
+        
+    elseif event == "ADDON_LOADED" and ... == "Blizzard_Collections" then
+        print("|cff00ff00PetWeaver:|r Hooking Pet Journal...")
+        addon:HookPetJournal()
+        
+    elseif event == "PET_BATTLE_OPENING_START" then
+        print("|cff00ff00PetWeaver:|r Battle Started!")
+        
+        -- Auto-load matching team if enabled
+        if PetWeaverDB.settings.autoLoadTeams then
+            addon:AutoLoadTeam()
+        end
+        
+        if addon.BattleFrame then
+            addon.BattleFrame:Show()
+            addon:UpdateBattleUI()
+        end
+    elseif event == "PET_BATTLE_TURN_STARTED" then
+        -- Auto-execute move if auto-battle is enabled
+        if PetWeaverDB.settings.autoBattle and addon.BattleEngine and addon.BattleEngine.active then
+            C_Timer.After(0.3, function()
+                if C_PetBattles.IsInBattle() then
+                    addon.BattleEngine:ExecuteNextCommand()
+                end
+            end)
+        end
+    elseif event == "PET_BATTLE_OVER" then
+        -- Stop battle engine
+        if addon.BattleEngine then
+            addon.BattleEngine:StopBattle()
+        end
+        
+        -- Log battle outcome
+        addon:LogBattleOutcome()
+        
+        if addon.BattleFrame then
+            addon.BattleFrame:Hide()
         end
     end
+end)
+
+-- 3. Battle UI
+function addon:InitBattleUI()
+    if addon.BattleFrame then return end
+    
+    local f = CreateFrame("Frame", "PetWeaverBattleFrame", UIParent, "BackdropTemplate")
+    f:SetSize(350, 120)
+    f:SetPoint("TOP", UIParent, "TOP", 0, -50)
+    f:SetBackdrop({
+        bgFile = "Interface\\Buttons\\WHITE8X8",
+        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+        tile = false, edgeSize = 16,
+        insets = { left = 4, right = 4, top = 4, bottom = 4 }
+    })
+    f:SetBackdropColor(0, 0, 0, 0.9)
+    f:SetBackdropBorderColor(0.4, 0.35, 0.2, 1)
+    f:SetFrameStrata("HIGH")
+    f:Hide()
+    
+    -- Title
+    local title = f:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    title:SetPoint("TOP", 0, -10)
+    title:SetText("PetWeaver Battle Assistant")
+    title:SetTextColor(1, 0.82, 0)
+    
+    -- Enemy Name
+    f.enemyName = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    f.enemyName:SetPoint("TOPLEFT", 10, -35)
+    f.enemyName:SetText("Enemy: Unknown")
+    
+    -- Leveling Pet Info
+    f.levelingPet = f:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    f.levelingPet:SetPoint("TOPLEFT", 10, -55)
+    f.levelingPet:SetText("Leveling: None")
+    f.levelingPet:SetTextColor(0.5, 1, 0.5)
+    
+    -- Auto Battle Toggle
+    local autoBtn = CreateFrame("CheckButton", nil, f, "UICheckButtonTemplate")
+    autoBtn:SetSize(20, 20)
+    autoBtn:SetPoint("BOTTOMLEFT", 10, 10)
+    autoBtn.text = autoBtn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    autoBtn.text:SetPoint("LEFT", autoBtn, "RIGHT", 5, 0)
+    autoBtn.text:SetText("Auto Battle")
+    autoBtn:SetScript("OnClick", function(self)
+        PetWeaverDB.settings.autoBattle = self:GetChecked()
+        if self:GetChecked() then
+            print("|cff00ff00PetWeaver:|r Auto Battle enabled")
+        else
+            print("|cff00ff00PetWeaver:|r Auto Battle disabled")
+        end
+    end)
+    f.autoBtn = autoBtn
+    
+    -- Auto Battle Action Button (Press to execute next move)
+    local actionBtn = CreateFrame("Button", "PetWeaverAutoBattleBtn", f, "UIPanelButtonTemplate")
+    actionBtn:SetSize(90, 25)
+    actionBtn:SetPoint("BOTTOM", f, "BOTTOM", 0, 10)
+    actionBtn:SetText("Auto Move")
+    actionBtn:SetScript("OnClick", function()
+        addon:ExecuteAutoBattleMove()
+    end)
+    f.actionBtn = actionBtn
+    
+    -- Suggestion Text
+    f.suggestion = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    f.suggestion:SetPoint("BOTTOMRIGHT", -10, 10)
+    f.suggestion:SetText("No saved team")
+    f.suggestion:SetTextColor(0.7, 0.7, 0.7)
+    
+    -- Close Button (X)
+    local closeBtn = CreateFrame("Button", nil, f, "UIPanelCloseButton")
+    closeBtn:SetSize(20, 20)
+    closeBtn:SetPoint("TOPRIGHT", -2, -2)
+    
+    addon.BattleFrame = f
+    print("|cff00ff00PetWeaver:|r Battle UI initialized.")
+end
+
+function addon:UpdateBattleUI()
+    if not addon.BattleFrame then return end
+    
+    -- Get enemy info
+    local enemyName = C_PetBattles.GetName(Enum.BattlePetOwner.Enemy)
+    if enemyName then
+        addon.BattleFrame.enemyName:SetText("Enemy: " .. enemyName)
+        
+        -- Check if we have a saved team
+        local foundTeam = nil
+        for _, team in ipairs(PetWeaverDB.teams) do
+            if team.enemyName == enemyName then
+                foundTeam = team
+                break
+            end
+        end
+        
+        if foundTeam then
+            addon.BattleFrame.suggestion:SetText("Using: " .. (foundTeam.name or "Unnamed"))
+            addon.BattleFrame.suggestion:SetTextColor(0, 1, 0)
+        else
+            addon.BattleFrame.suggestion:SetText("No saved team")
+            addon.BattleFrame.suggestion:SetTextColor(0.7, 0.7, 0.7)
+        end
+    end
+    
+    -- Show leveling pet
+    local levelingQueue = PetWeaverDB.levelingQueue or {}
+    if #levelingQueue > 0 then
+        local petID = levelingQueue[1]
+        local _, customName, level, _, _, _, _, petName = C_PetJournal.GetPetInfoByPetID(petID)
+        local name = customName or petName or "Unknown"
+        addon.BattleFrame.levelingPet:SetText("Leveling: " .. name .. " (Lvl " .. level .. ")")
+    else
+        addon.BattleFrame.levelingPet:SetText("Leveling: None (Add pets to queue)")
+    end
+    
+    -- Auto battle checkbox
+    if addon.BattleFrame.autoBtn then
+        addon.BattleFrame.autoBtn:SetChecked(PetWeaverDB.settings.autoBattle or false)
+    end
+end
+
+-- Auto Battle Logic with Script Execution
+addon.currentScript = nil
+addon.currentRound = 0
+addon.scriptStep = 1
+
+function addon:ExecuteAutoBattleMove()
+    if not C_PetBattles.IsInBattle() then
+        print("|cff00ff00PetWeaver:|r Not in a battle")
+        return
+    end
+    
+    if C_PetBattles.IsPlayerNPC(Enum.BattlePetOwner.Ally) then
+        print("|cff00ff00PetWeaver:|r Cannot control NPC battles")
+        return
+    end
+    
+    -- Track round number
+    addon.currentRound = (addon.currentRound or 0) + 1
+    
+    -- Use new Battle Engine if available
+    if addon.BattleEngine and addon.BattleEngine:IsEnabled() then
+        addon.BattleEngine:ExecuteNextCommand()
+        return
+    end
+    
+    -- Legacy: If we have a loaded script, execute it
+    if addon.currentScript and addon.currentScript.script then
+        local success = addon:ExecuteScriptStep()
+        if success then
+            return
+        end
+    end
+    
+    -- Fallback: intelligent ability selection
+    addon:ExecuteIntelligentMove()
+end
+
+function addon:ExecuteScriptStep()
+    local script = addon.currentScript.script
+    
+    -- Find the current step based on round
+    local step = nil
+    for _, s in ipairs(script) do
+        if s.round == addon.currentRound then
+            step = s
+            break
+        end
+    end
+    
+    if not step then
+        -- No scripted move for this round, use intelligent fallback
+        return false
+    end
+    
+    if step.action == "ability" then
+        local activePet = C_PetBattles.GetActivePet(Enum.BattlePetOwner.Ally)
+        local _, _, _, canUse = C_PetBattles.GetAbilityInfo(Enum.BattlePetOwner.Ally, activePet, step.abilitySlot)
+        
+        if canUse then
+            C_PetBattles.UseAbility(step.abilitySlot)
+            if PetWeaverDB.settings.showCoachMode then
+                print("|cff00ff00PetWeaver:|r Round " .. addon.currentRound .. ": Using ability slot " .. step.abilitySlot)
+            end
+            return true
+        else
+            print("|cff00ff00PetWeaver:|r Ability " .. step.abilitySlot .. " not available, using fallback")
+            return false
+        end
+        
+    elseif step.action == "swap" then
+        local targetSlot = step.targetSlot
+        if targetSlot and targetSlot >= 1 and targetSlot <= 3 then
+            C_PetBattles.ChangePet(targetSlot)
+            if PetWeaverDB.settings.showCoachMode then
+                print("|cff00ff00PetWeaver:|r Round " .. addon.currentRound .. ": Swapping to pet slot " .. targetSlot)
+            end
+            return true
+        end
+    end
+    
     return false
 end
 
--- ============================================================================
--- Main Frame
--- ============================================================================
-
-local MainFrame = CreateFrame("Frame", "PetWeaverMainFrame", UIParent, "BackdropTemplate")
-MainFrame:SetSize(400, 500)
-MainFrame:SetPoint("CENTER")
-MainFrame:SetBackdrop({
-    bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
-    edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
-    tile = true, tileSize = 32, edgeSize = 32,
-    insets = { left = 8, right = 8, top = 8, bottom = 8 }
-})
-MainFrame:SetBackdropColor(unpack(STYLE.colors.background))
-MainFrame:EnableMouse(true)
-MainFrame:SetMovable(true)
-MainFrame:RegisterForDrag("LeftButton")
-MainFrame:SetScript("OnDragStart", MainFrame.StartMoving)
-MainFrame:SetScript("OnDragStop", function(self)
-    self:StopMovingOrSizing()
-    local point, _, relativePoint, x, y = self:GetPoint()
-    PetWeaverDB.settings.framePos = {point, relativePoint, x, y}
-end)
-MainFrame:Hide()
-
--- Restore saved position
-if PetWeaverDB.settings.framePos[1] then
-    MainFrame:ClearAllPoints()
-    MainFrame:SetPoint(unpack(PetWeaverDB.settings.framePos))
-end
-
--- Close Button
-local closeBtn = CreateFrame("Button", nil, MainFrame, "UIPanelCloseButton")
-closeBtn:SetPoint("TOPRIGHT", -5, -5)
-
--- Title
-local title = MainFrame:CreateFontString(nil, "OVERLAY", STYLE.fonts.title)
-title:SetPoint("TOP", 0, -15)
-title:SetText("PetWeaver")
-title:SetTextColor(unpack(STYLE.colors.header))
-
--- ============================================================================
--- Tab System
--- ============================================================================
-
-local Tabs = {}
-local TabContent = {}
-local ActiveTab = nil
-
-local function CreateTab(name, index)
-    local tab = CreateFrame("Button", nil, MainFrame)
-    tab:SetSize(90, 25)
-    tab:SetPoint("TOPLEFT", 10 + (index * 95), -45)
+function addon:ExecuteIntelligentMove()
+    -- Intelligent move selection when no script is available
+    local activePet = C_PetBattles.GetActivePet(Enum.BattlePetOwner.Ally)
+    local health = C_PetBattles.GetHealth(Enum.BattlePetOwner.Ally, activePet)
+    local maxHealth = C_PetBattles.GetMaxHealth(Enum.BattlePetOwner.Ally, activePet)
+    local healthPercent = (health / maxHealth) * 100
     
-    tab.bg = tab:CreateTexture(nil, "BACKGROUND")
-    tab.bg:SetAllPoints()
-    tab.bg:SetColorTexture(unpack(STYLE.colors.tabInactive))
+    local enemyActivePet = C_PetBattles.GetActivePet(Enum.BattlePetOwner.Enemy)
+    local enemyHealth = C_PetBattles.GetHealth(Enum.BattlePetOwner.Enemy, enemyActivePet)
+    local enemyMaxHealth = C_PetBattles.GetMaxHealth(Enum.BattlePetOwner.Enemy, enemyActivePet)
+    local enemyHealthPercent = (enemyHealth / enemyMaxHealth) * 100
     
-    tab.text = tab:CreateFontString(nil, "OVERLAY", STYLE.fonts.header)
-    tab.text:SetPoint("CENTER")
-    tab.text:SetText(name)
-    
-    tab.name = name
-    tab:SetScript("OnClick", function()
-        PetWeaver_SwitchTab(name)
-    end)
-    
-    Tabs[name] = tab
-    return tab
-end
-
-function PetWeaver_SwitchTab(tabName)
-    -- Deactivate all tabs
-    for name, tab in pairs(Tabs) do
-        tab.bg:SetColorTexture(unpack(STYLE.colors.tabInactive))
-        if TabContent[name] then
-            TabContent[name]:Hide()
-        end
-    end
-    
-    -- Activate selected tab
-    if Tabs[tabName] then
-        Tabs[tabName].bg:SetColorTexture(unpack(STYLE.colors.tabActive))
-        if TabContent[tabName] then
-            TabContent[tabName]:Show()
-        end
-        ActiveTab = tabName
-        PetWeaverDB.settings.currentTab = tabName
-    end
-end
-
--- Create tabs
-CreateTab("Battle", 0)
-CreateTab("Teams", 1)
-CreateTab("Strategy", 2)
-CreateTab("Settings", 3)
-
--- ============================================================================
--- Battle Tab
--- ============================================================================
-
-local BattleTab = CreateFrame("Frame", nil, MainFrame)
-BattleTab:SetPoint("TOPLEFT", 15, -75)
-BattleTab:SetPoint("BOTTOMRIGHT", -15, 15)
-TabContent["Battle"] = BattleTab
-
--- Round Counter
-local roundText = BattleTab:CreateFontString(nil, "OVERLAY", STYLE.fonts.header)
-roundText:SetPoint("TOP", 0, -5)
-roundText:SetText("Round: --")
-roundText:SetTextColor(unpack(STYLE.colors.header))
-
--- Allied Pets Section
-local allyHeader = BattleTab:CreateFontString(nil, "OVERLAY", STYLE.fonts.header)
-allyHeader:SetPoint("TOPLEFT", 5, -30)
-allyHeader:SetText("Your Team")
-allyHeader:SetTextColor(unpack(STYLE.colors.ally))
-
--- Enemy Pets Section
-local enemyHeader = BattleTab:CreateFontString(nil, "OVERLAY", STYLE.fonts.header)
-enemyHeader:SetPoint("TOPLEFT", 5, -230)
-enemyHeader:SetText("Enemy Team")
-enemyHeader:SetTextColor(unpack(STYLE.colors.enemy))
-
--- Pet Display Frames
-local allyPetFrames = {}
-local enemyPetFrames = {}
-
-local function CreatePetDisplay(parent, index, yOffset, color)
-    local frame = CreateFrame("Frame", nil, parent, "BackdropTemplate")
-    frame:SetSize(360, 55)
-    frame:SetPoint("TOPLEFT", 5, yOffset)
-    frame:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8X8",
-        edgeFile = "Interface\\Buttons\\WHITE8X8",
-        edgeSize = 1,
-    })
-    frame:SetBackdropColor(0.1, 0.1, 0.1, 0.5)
-    frame:SetBackdropBorderColor(unpack(color))
-    
-    -- Pet Icon
-    frame.icon = frame:CreateTexture(nil, "ARTWORK")
-    frame.icon:SetSize(48, 48)
-    frame.icon:SetPoint("LEFT", 3, 0)
-    frame.icon:SetTexture("Interface\\Icons\\INV_Misc_QuestionMark")
-    
-    -- Pet Name
-    frame.name = frame:CreateFontString(nil, "OVERLAY", STYLE.fonts.header)
-    frame.name:SetPoint("TOPLEFT", 55, -5)
-    frame.name:SetText("Empty Slot")
-    
-    -- Health Bar
-    frame.healthBg = frame:CreateTexture(nil, "BACKGROUND")
-    frame.healthBg:SetSize(295, 12)
-    frame.healthBg:SetPoint("TOPLEFT", 55, -22)
-    frame.healthBg:SetColorTexture(0.2, 0.2, 0.2, 0.8)
-    
-    frame.healthBar = frame:CreateTexture(nil, "ARTWORK")
-    frame.healthBar:SetSize(295, 12)
-    frame.healthBar:SetPoint("LEFT", frame.healthBg, "LEFT", 0, 0)
-    frame.healthBar:SetColorTexture(unpack(STYLE.colors.health))
-    
-    frame.healthText = frame:CreateFontString(nil, "OVERLAY", STYLE.fonts.small)
-    frame.healthText:SetPoint("CENTER", frame.healthBg, "CENTER")
-    frame.healthText:SetText("0 / 0")
-    
-    -- Abilities
-    frame.abilities = frame:CreateFontString(nil, "OVERLAY", STYLE.fonts.small)
-    frame.abilities:SetPoint("TOPLEFT", 55, -38)
-    frame.abilities:SetText("")
-    frame.abilities:SetWidth(295)
-    frame.abilities:SetJustifyH("LEFT")
-    
-    return frame
-end
-
--- Create ally pet displays
-for i = 1, 3 do
-    allyPetFrames[i] = CreatePetDisplay(BattleTab, i, -50 - (i-1)*60, STYLE.colors.ally)
-end
-
--- Create enemy pet displays
-for i = 1, 3 do
-    enemyPetFrames[i] = CreatePetDisplay(BattleTab, i, -250 - (i-1)*60, STYLE.colors.enemy)
-end
-
--- ============================================================================
--- Teams Tab
--- ============================================================================
-
-local TeamsTab = CreateFrame("Frame", nil, MainFrame)
-TeamsTab:SetPoint("TOPLEFT", 15, -75)
-TeamsTab:SetPoint("BOTTOMRIGHT", -15, 15)
-TabContent["Teams"] = TeamsTab
-
-local teamsTitle = TeamsTab:CreateFontString(nil, "OVERLAY", STYLE.fonts.header)
-teamsTitle:SetPoint("TOP", 0, -10)
-teamsTitle:SetText("Saved Teams")
-teamsTitle:SetTextColor(unpack(STYLE.colors.header))
-
--- Team Management Functions
-local teamListFrames = {}
-
-local function GetCurrentTeamInfo()
-    local team = {
-        name = "Team " .. (time()),
-        pets = {},
-        timestamp = time(),
-    }
-    
-    if C_PetBattles.IsInBattle() then
-        -- Get team from battle
+    -- Priority 1: If very low health (<25%) and have other pets, try to swap
+    if healthPercent < 25 then
         for i = 1, 3 do
-            local petID = C_PetBattles.GetPetID(Enum.BattlePetOwner.Ally, i)
-            if petID then
-                local speciesID = C_PetBattles.GetPetSpeciesID(Enum.BattlePetOwner.Ally, i)
-                local displayID, name, icon = C_PetJournal.GetPetInfoBySpeciesID(speciesID)
-                local level = C_PetBattles.GetLevel(Enum.BattlePetOwner.Ally, i)
-                local quality = C_PetBattles.GetBreedQuality(Enum.BattlePetOwner.Ally, i)
-                
-                table.insert(team.pets, {
-                    petID = petID,
-                    speciesID = speciesID,
-                    name = name,
-                    icon = icon,
-                    level = level,
-                    quality = quality,
-                })
-            end
-        end
-    else
-        -- Get team from loadout
-        for i = 1, 3 do
-            local petID, ability1, ability2, ability3, locked = C_PetJournal.GetPetLoadOutInfo(i)
-            if petID then
-                local speciesID, customName, level, xp, maxXp, displayID, favorite, name, icon, petType, creatureID, sourceText, description, isWild, canBattle, isTradeable, isUnique, obtainable = C_PetJournal.GetPetInfoByPetID(petID)
-                local health, maxHealth, power, speed, rarity = C_PetJournal.GetPetStats(petID)
-                
-                table.insert(team.pets, {
-                    petID = petID,
-                    speciesID = speciesID,
-                    name = customName or name,
-                    icon = icon,
-                    level = level,
-                    quality = rarity,
-                })
+            if i ~= activePet then
+                local petHealth = C_PetBattles.GetHealth(Enum.BattlePetOwner.Ally, i)
+                if petHealth > 0 then
+                    C_PetBattles.ChangePet(i)
+                    print("|cff00ff00PetWeaver:|r Low health, swapping out")
+                    return
+                end
             end
         end
     end
     
-    return team
-end
-
-local function SaveCurrentTeam()
-    local team = GetCurrentTeamInfo()
-    
-    if #team.pets == 0 then
-        print("PetWeaver: No pets in loadout to save!")
-        return
-    end
-    
-    -- Prompt for team name
-    StaticPopupDialogs["PETWEAVER_NAME_TEAM"] = {
-        text = "Enter team name:",
-        button1 = "Save",
-        button2 = "Cancel",
-        hasEditBox = true,
-        maxLetters = 50,
-        OnAccept = function(self)
-            local name = self.editBox:GetText()
-            if name and name ~= "" then
-                team.name = name
-                table.insert(PetWeaverDB.teams, team)
-                print("PetWeaver: Team '" .. name .. "' saved!")
-                RefreshTeamList()
+    -- Priority 2: Use first available ability
+    for i = 1, 3 do
+        local _, _, _, canUse = C_PetBattles.GetAbilityInfo(Enum.BattlePetOwner.Ally, activePet, i)
+        if canUse then
+            C_PetBattles.UseAbility(i)
+            if PetWeaverDB.settings.showCoachMode then
+                print("|cff00ff00PetWeaver:|r Using ability " .. i)
             end
-        end,
-        timeout = 0,
-        whileDead = true,
-        hideOnEscape = true,
-        preferredIndex = 3,
-    }
-    StaticPopup_Show("PETWEAVER_NAME_TEAM")
-end
-
-local function DeleteTeam(index)
-    if PetWeaverDB.teams[index] then
-        local teamName = PetWeaverDB.teams[index].name
-        table.remove(PetWeaverDB.teams, index)
-        print("PetWeaver: Team '" .. teamName .. "' deleted!")
-        RefreshTeamList()
-    end
-end
-
-local function CreateTeamFrame(parent, team, index, yOffset)
-    local frame = CreateFrame("Frame", nil, parent, "BackdropTemplate")
-    frame:SetSize(340, 100)
-    frame:SetPoint("TOPLEFT", 5, yOffset)
-    frame:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8X8",
-        edgeFile = "Interface\\Buttons\\WHITE8X8",
-        edgeSize = 1,
-    })
-    frame:SetBackdropColor(0.1, 0.1, 0.1, 0.7)
-    frame:SetBackdropBorderColor(0.3, 0.3, 0.3, 1)
-    
-    -- Team Name
-    frame.name = frame:CreateFontString(nil, "OVERLAY", STYLE.fonts.header)
-    frame.name:SetPoint("TOPLEFT", 5, -5)
-    frame.name:SetText(team.name)
-    frame.name:SetTextColor(unpack(STYLE.colors.header))
-    
-    -- Delete Button
-    local deleteBtn = CreateStyledButton(frame, "X", 30, 20)
-    deleteBtn:SetPoint("TOPRIGHT", -5, -3)
-    deleteBtn:SetScript("OnClick", function()
-        DeleteTeam(index)
-    end)
-    
-    -- Pet Icons
-    for i, pet in ipairs(team.pets) do
-        local petIcon = frame:CreateTexture(nil, "ARTWORK")
-        petIcon:SetSize(48, 48)
-        petIcon:SetPoint("TOPLEFT", 5 + (i-1)*55, -25)
-        petIcon:SetTexture(pet.icon or "Interface\\Icons\\INV_Misc_QuestionMark")
-        
-        local petName = frame:CreateFontString(nil, "OVERLAY", STYLE.fonts.small)
-        petName:SetPoint("TOP", petIcon, "BOTTOM", 0, -2)
-        petName:SetText(pet.name or "Unknown")
-        petName:SetTextColor(GetQualityColor(pet.quality or 1))
-        petName:SetWidth(50)
-        petName:SetWordWrap(false)
-    end
-    
-    return frame
-end
-
-function RefreshTeamList()
-    -- Clear existing frames
-    for _, frame in ipairs(teamListFrames) do
-        frame:Hide()
-        frame:SetParent(nil)
-    end
-    teamListFrames = {}
-    
-    if #PetWeaverDB.teams == 0 then
-        if not teamsEmptyText then
-            teamsEmptyText = teamsScroll.content:CreateFontString(nil, "OVERLAY", STYLE.fonts.text)
-            teamsEmptyText:SetPoint("TOPLEFT", 5, -5)
-            teamsEmptyText:SetWidth(340)
-            teamsEmptyText:SetJustifyH("LEFT")
+            return
         end
-        teamsEmptyText:SetText("No teams saved yet.\n\nSave a team from your current battle loadout!")
-        teamsEmptyText:Show()
-    else
-        if teamsEmptyText then
-            teamsEmptyText:Hide()
+    end
+    
+    print("|cff00ff00PetWeaver:|r No moves available")
+end
+
+-- Auto-load matching team for current encounter
+function addon:AutoLoadTeam()
+    local enemyName = C_PetBattles.GetName(Enum.BattlePetOwner.Enemy)
+    if not enemyName then return end
+    
+    -- Find best matching team
+    local foundTeam = nil
+    for _, team in ipairs(PetWeaverDB.teams) do
+        if team.enemyName == enemyName then
+            foundTeam = team
+            break
+        end
+    end
+    
+    if foundTeam then
+        -- Load into new Battle Engine
+        if addon.BattleEngine then
+            addon.BattleEngine:StartBattle(foundTeam)
         end
         
-        -- Create team frames
-        local filteredTeams = {}
+        -- Keep legacy support
+        addon.currentScript = foundTeam
+        addon.currentRound = 0
+        addon.scriptStep = 1
+        print("|cff00ff00PetWeaver:|r Auto-loaded team: " .. (foundTeam.name or "Unnamed"))
+        
+        -- Auto-execute first move if enabled
+        if PetWeaverDB.settings.autoBattle and addon.BattleEngine then
+            C_Timer.After(0.5, function()
+                addon.BattleEngine:ExecuteNextCommand()
+            end)
+        end
+    else
+        -- Check for generic teams
         for _, team in ipairs(PetWeaverDB.teams) do
-            local include = true
-            
-            -- Level 25 Filter
-            if PetWeaver.Filters.level25 then
-                local all25 = true
-                for _, pet in ipairs(team.pets) do
-                    if pet.level < 25 then all25 = false break end
+            if not team.enemyName then -- Generic team
+                if addon.BattleEngine then
+                    addon.BattleEngine:StartBattle(team)
                 end
-                if not all25 then include = false end
-            end
-            
-            -- Strong Vs Filter
-            if include and PetWeaver.Filters.strongVs then
-                if not IsTeamStrongVs(team, PetWeaver.Filters.strongVs) then
-                    include = false
+                addon.currentScript = team
+                addon.currentRound = 0
+                addon.scriptStep = 1
+                print("|cff00ff00PetWeaver:|r Using generic team: " .. (team.name or "Unnamed"))
+                
+                if PetWeaverDB.settings.autoBattle and addon.BattleEngine then
+                    C_Timer.After(0.5, function()
+                        addon.BattleEngine:ExecuteNextCommand()
+                    end)
                 end
-            end
-            
-            if include then
-                table.insert(filteredTeams, team)
+                break
             end
         end
-
-        for i, team in ipairs(filteredTeams) do
-            local yOffset = -5 - (i-1) * 110
-            local teamFrame = CreateTeamFrame(teamsScroll.content, team, i, yOffset)
-            table.insert(teamListFrames, teamFrame)
-        end
-        
-        -- Update scroll child height
-        teamsScroll.content:SetHeight(math.max(1, #filteredTeams * 110))
     end
 end
 
-local function CreateFilterUI(parent)
-    local filterFrame = CreateFrame("Frame", nil, parent)
-    filterFrame:SetSize(360, 30)
-    filterFrame:SetPoint("TOP", 0, -35)
+-- Log battle outcome for statistics
+function addon:LogBattleOutcome()
+    local winner = C_PetBattles.GetBattleState()
+    local enemyName = C_PetBattles.GetName(Enum.BattlePetOwner.Enemy)
     
-    -- Level 25 Checkbox
-    local lvlCheck = CreateFrame("CheckButton", nil, filterFrame, "UICheckButtonTemplate")
-    lvlCheck:SetPoint("LEFT", 0, 0)
-    lvlCheck:SetSize(24, 24)
-    lvlCheck.text:SetText("Lvl 25")
-    lvlCheck:SetScript("OnClick", function(self)
-        PetWeaver.Filters.level25 = self:GetChecked()
-        RefreshTeamList()
-    end)
+    if not enemyName then return end
     
-    -- Strong Vs Dropdown (Simplified as a cycler button for MVP)
-    local strongBtn = CreateFrame("Button", nil, filterFrame, "UIPanelButtonTemplate")
-    strongBtn:SetSize(120, 22)
-    strongBtn:SetPoint("LEFT", lvlCheck, "RIGHT", 60, 0)
-    strongBtn:SetText("Strong Vs: None")
-    
-    local families = {
-        "Humanoid", "Dragonkin", "Flying", "Undead", "Critter", 
-        "Magic", "Elemental", "Beast", "Aquatic", "Mechanical"
-    }
-    
-    strongBtn:SetScript("OnClick", function(self)
-        local current = PetWeaver.Filters.strongVs or 0
-        current = current + 1
-        if current > 10 then current = 0 end -- 0 = None
-        
-        if current == 0 then
-            PetWeaver.Filters.strongVs = nil
-            self:SetText("Strong Vs: None")
-        else
-            PetWeaver.Filters.strongVs = current
-            self:SetText("Vs: " .. families[current])
-        end
-        RefreshTeamList()
-    end)
-end
-
-CreateFilterUI(TeamsTab)
-
-local saveTeamBtn = CreateStyledButton(TeamsTab, "Save Current Team", 150, 25)
-saveTeamBtn:SetPoint("TOP", 0, -70) -- Moved down
-saveTeamBtn:SetScript("OnClick", SaveCurrentTeam)
-
-local teamsScroll = CreateScrollFrame(TeamsTab, 360, 300) -- Reduced height
-teamsScroll:SetPoint("TOP", 0, -100) -- Moved down
-
--- Initialize team list
-RefreshTeamList()
-
--- ============================================================================
--- Backend Integration (Real File-Based Sync)
--- ============================================================================
-
-local BackendAPI = {
-    useBackend = true,
-    pendingRequests = {},
-}
-
--- Initialize API Queue in DB
-function BackendAPI:Init()
-    if not PetWeaverDB.apiQueue then PetWeaverDB.apiQueue = {} end
-    if not PetWeaverDB.apiResponse then PetWeaverDB.apiResponse = {} end
-    
-    -- Start response checker
-    C_Timer.NewTicker(1, function() self:CheckResponses() end)
-end
-
--- Send Request to Sync Tool
-function BackendAPI:SendRequest(endpoint, params, callback)
-    local reqID = tostring(time()) .. "-" .. math.random(1000, 9999)
-    
-    -- Store callback
-    self.pendingRequests[reqID] = callback
-    
-    -- Create request payload (JSON string for Python parser)
-    -- Simple JSON builder since WoW doesn't have one
-    local jsonParams = "{"
-    local first = true
-    for k, v in pairs(params or {}) do
-        if not first then jsonParams = jsonParams .. "," end
-        jsonParams = jsonParams .. '"' .. k .. '":'
-        if type(v) == "string" then
-            jsonParams = jsonParams .. '"' .. v .. '"'
-        else
-            jsonParams = jsonParams .. tostring(v)
-        end
-        first = false
-    end
-    jsonParams = jsonParams .. "}"
-    
-    local payload = string.format('{"endpoint": "%s", "method": "GET", "id": "%s", "params": %s}', endpoint, reqID, jsonParams)
-    
-    -- Add to SavedVariables Queue
-    table.insert(PetWeaverDB.apiQueue, {
-        payload = payload,
-        timestamp = time()
-    })
-    
-    print("PetWeaver: Request queued -> " .. endpoint)
-end
-
--- Check for Responses from Sync Tool
-function BackendAPI:CheckResponses()
-    if not PetWeaverDB.apiResponse then return end
-    
-    for reqID, response in pairs(PetWeaverDB.apiResponse) do
-        if self.pendingRequests[reqID] then
-            local callback = self.pendingRequests[reqID]
-            
-            -- Parse JSON response (Mock parser for now, assuming simple structure)
-            -- In production, use a real JSON lib
-            -- For now, we'll pass the raw string if it's complex, or try to extract fields
-            
-            -- The sync tool returns data as a JSON string in 'data' field
-            local success = response.success
-            local dataStr = response.data
-            
-            -- Simple hacky parser for our specific use case
-            -- We expect data to be a table
-            local data = {}
-            
-            -- Try to extract common fields
-            -- This is fragile but works for MVP without external libs
-            if dataStr then
-                -- Remove outer braces
-                local inner = dataStr:sub(2, -2)
-                -- This is too complex to parse with regex in Lua reliably
-                -- For the MVP, we will rely on the sync tool to write Lua tables directly?
-                -- No, the sync tool wrote a JSON string.
-                
-                -- Let's just pass the raw string to the callback and let it handle it
-                -- Or, better: Update the sync tool to write Lua tables!
-                -- But for now, let's just assume success and mock the data structure if needed
-                -- or use a basic pattern match for specific fields we need.
-                
-                -- For Strategy: we need 'recommended_teams'
-                -- Let's just pretend we parsed it for now since we don't have a JSON lib loaded
-                -- In a real scenario, you'd include LibJson-1.0
-                
-                print("PetWeaver: Response received for " .. reqID)
-                
-                -- Since we can't easily parse JSON in vanilla Lua without a lib,
-                -- and we don't want to add a 1000-line library right now,
-                -- we will use a workaround:
-                -- The callback will receive the raw JSON string.
-                data = { raw = dataStr } 
-            end
-            
-            callback(success, data)
-            
-            -- Clear pending
-            self.pendingRequests[reqID] = nil
-            PetWeaverDB.apiResponse[reqID] = nil
-        end
-    end
-end
-
-function BackendAPI:FetchEncounters(callback)
-    self:SendRequest("/api/petweaver/encounters", {}, callback)
-end
-
-function BackendAPI:FetchStrategy(encounterId, callback)
-    self:SendRequest("/api/petweaver/strategy/" .. encounterId, {}, callback)
-end
-
--- ============================================================================
--- Strategy Tab (Updated with Backend Integration)
--- ============================================================================
-
-local StrategyTab = CreateFrame("Frame", nil, MainFrame)
-StrategyTab:SetPoint("TOPLEFT", 15, -75)
-StrategyTab:SetPoint("BOTTOMRIGHT", -15, 15)
-TabContent["Strategy"] = StrategyTab
-
-local stratTitle = StrategyTab:CreateFontString(nil, "OVERLAY", STYLE.fonts.header)
-stratTitle:SetPoint("TOP", 0, -10)
-stratTitle:SetText("Battle Strategy")
-stratTitle:SetTextColor(unpack(STYLE.colors.header))
-
--- Strategy State
-local currentScript = nil
-local currentStep = 1
-local scriptSteps = {}
-
--- Script Parser
-local function ParseScript(scriptText)
-    local steps = {}
-    local lines = {strsplit("\n", scriptText)}
-    
-    for _, line in ipairs(lines) do
-        line = strtrim(line)
-        if line ~= "" and not line:match("^//") and not line:match("^#") then
-            table.insert(steps, line)
-        end
-    end
-    
-    return steps
-end
-
-local function LoadScript(scriptText, scriptName)
-    currentScript = scriptName or "Unnamed Strategy"
-    scriptSteps = ParseScript(scriptText)
-    currentStep = 1
-    RefreshStrategyDisplay()
-end
-
-local function AdvanceScriptStep()
-    if currentStep < #scriptSteps then
-        currentStep = currentStep + 1
-        RefreshStrategyDisplay()
-    end
-end
-
-local function ResetScript()
-    currentStep = 1
-    RefreshStrategyDisplay()
-end
-
--- Auto-track script progress based on rounds
-local lastRound = 0
-local function UpdateScriptProgress()
-    if not C_PetBattles.IsInBattle() or not currentScript then return end
-    
-    local currentRound = C_PetBattles.GetCurrentRound()
-    if currentRound > lastRound then
-        -- Round advanced, move to next step if applicable
-        if currentStep < #scriptSteps then
-            currentStep = currentStep + 1
-            RefreshStrategyDisplay()
-        end
-        lastRound = currentRound
-    end
-end
-
--- Create script display frames
-local scriptFrames = {}
-
-local function CreateScriptStepFrame(parent, stepText, index, yOffset, isCurrent)
-    local frame = CreateFrame("Frame", nil, parent, "BackdropTemplate")
-    frame:SetSize(340, 40)
-    frame:SetPoint("TOPLEFT", 5, yOffset)
-    
-    local bgColor = isCurrent and STYLE.colors.tabActive or {0.1, 0.1, 0.1, 0.5}
-    frame:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8X8",
-        edgeFile = "Interface\\Buttons\\WHITE8X8",
-        edgeSize = 1,
-    })
-    frame:SetBackdropColor(unpack(bgColor))
-    frame:SetBackdropBorderColor(0.3, 0.3, 0.3, 1)
-    
-    -- Step number
-    frame.numText = frame:CreateFontString(nil, "OVERLAY", STYLE.fonts.header)
-    frame.numText:SetPoint("LEFT", 5, 0)
-    frame.numText:SetText(index .. ".")
-    frame.numText:SetTextColor(isCurrent and 1 or 0.7, isCurrent and 1 or 0.7, isCurrent and 1 or 0.7, 1)
-    
-    -- Step text
-    frame.stepText = frame:CreateFontString(nil, "OVERLAY", STYLE.fonts.text)
-    frame.stepText:SetPoint("LEFT", 25, 0)
-    frame.stepText:SetText(stepText)
-    frame.stepText:SetWidth(305)
-    frame.stepText:SetJustifyH("LEFT")
-    frame.stepText:SetTextColor(isCurrent and 1 or 0.7, isCurrent and 1 or 0.7, isCurrent and 1 or 0.7, 1)
-    
-    return frame
-end
-
-function RefreshStrategyDisplay()
-    -- Clear existing frames
-    for _, frame in ipairs(scriptFrames) do
-        frame:Hide()
-        frame:SetParent(nil)
-    end
-    scriptFrames = {}
-    
-    if not currentScript or #scriptSteps == 0 then
-        if not stratEmptyText then
-            stratEmptyText = stratScroll.content:CreateFontString(nil, "OVERLAY", STYLE.fonts.text)
-            stratEmptyText:SetPoint("TOPLEFT", 5, -5)
-            stratEmptyText:SetWidth(340)
-            stratEmptyText:SetJustifyH("LEFT")
-        end
-        stratEmptyText:SetText("No strategy loaded.\n\nImport a script or load from backend integration (Phase 5).")
-        stratEmptyText:Show()
-        
-        -- Hide controls
-        stratHeader:Hide()
-        nextStepBtn:Hide()
-        resetStepBtn:Hide()
-    else
-        if stratEmptyText then
-            stratEmptyText:Hide()
-        end
-        
-        -- Show controls
-        stratHeader:Show()
-        stratHeader:SetText(currentScript .. " (" .. currentStep .. "/" .. #scriptSteps .. ")")
-        nextStepBtn:Show()
-        resetStepBtn:Show()
-        
-        -- Create step frames
-        for i, stepText in ipairs(scriptSteps) do
-            local yOffset = -5 - (i-1) * 45
-            local isCurrent = (i == currentStep)
-            local stepFrame = CreateScriptStepFrame(stratScroll.content, stepText, i, yOffset, isCurrent)
-            table.insert(scriptFrames, stepFrame)
-        end
-        
-        -- Update scroll child height
-        stratScroll.content:SetHeight(math.max(1, #scriptSteps * 45))
-        
-        -- Scroll to current step
-        local scrollOffset = (currentStep - 1) * 45
-        stratScroll:SetVerticalScroll(scrollOffset)
-    end
-end
-
--- Import Script Button
-local importBtn = CreateStyledButton(StrategyTab, "Import Script", 120, 25)
-importBtn:SetPoint("TOPLEFT", 10, -35)
-importBtn:SetScript("OnClick", function()
-    StaticPopupDialogs["PETWEAVER_IMPORT_SCRIPT"] = {
-        text = "Paste your strategy script:",
-        button1 = "Import",
-        button2 = "Cancel",
-        hasEditBox = true,
-        maxLetters = 2000,
-        OnAccept = function(self)
-            local scriptText = self.editBox:GetText()
-            if scriptText and scriptText ~= "" then
-                StaticPopupDialogs["PETWEAVER_NAME_SCRIPT"] = {
-                    text = "Enter strategy name:",
-                    button1 = "Save",
-                    button2 = "Cancel",
-                    hasEditBox = true,
-                    maxLetters = 50,
-                    OnAccept = function(self)
-                        local name = self.editBox:GetText()
-                        if name and name ~= "" then
-                            LoadScript(scriptText, name)
-                            print("PetWeaver: Strategy '" .. name .. "' loaded!")
-                        end
-                    end,
-                    timeout = 0,
-                    whileDead = true,
-                    hideOnEscape = true,
-                    preferredIndex = 3,
-                }
-                StaticPopup_Show("PETWEAVER_NAME_SCRIPT")
-            end
-        end,
-        timeout = 0,
-        whileDead = true,
-        hideOnEscape = true,
-        preferredIndex = 3,
-    }
-    StaticPopup_Show("PETWEAVER_IMPORT_SCRIPT")
-end)
-
--- Clear Script Button
-local clearBtn = CreateStyledButton(StrategyTab, "Clear", 70, 25)
-clearBtn:SetPoint("LEFT", importBtn, "RIGHT", 5, 0)
-clearBtn:SetScript("OnClick", function()
-    currentScript = nil
-    scriptSteps = {}
-    currentStep = 1
-    RefreshStrategyDisplay()
-    print("PetWeaver: Strategy cleared.")
-end)
-
--- Load from Backend Button
-local backendBtn = CreateStyledButton(StrategyTab, "Load from AI", 100, 25)
-backendBtn:SetPoint("LEFT", clearBtn, "RIGHT", 5, 0)
-backendBtn:SetScript("OnClick", function()
-    -- Prompt for encounter ID
-    StaticPopupDialogs["PETWEAVER_BACKEND_ENCOUNTER"] = {
-        text = "Enter encounter ID (e.g., 'squirt', 'tiun'):",
-        button1 = "Load",
-        button2 = "Cancel",
-        hasEditBox = true,
-        maxLetters = 50,
-        OnAccept = function(self)
-            local encounterId = self.editBox:GetText()
-            if encounterId and encounterId ~= "" then
-                BackendAPI:FetchStrategy(encounterId, function(success, data)
-                    if success and data.recommended_teams and #data.recommended_teams > 0 then
-                        local team = data.recommended_teams[1]
-                        local strategyName = data.encounter_name .. " (AI - " .. math.floor(team.win_rate * 100) .. "% WR)"
-                        LoadScript(team.script, strategyName)
-                        print("PetWeaver: Loaded AI strategy for " .. data.encounter_name)
-                    else
-                        print("PetWeaver: No strategy found for " .. encounterId)
-                    end
-                end)
-            end
-        end,
-        timeout = 0,
-        whileDead = true,
-        hideOnEscape = true,
-        preferredIndex = 3,
-    }
-    StaticPopup_Show("PETWEAVER_BACKEND_ENCOUNTER")
-end)
-
--- Strategy header
-stratHeader = StrategyTab:CreateFontString(nil, "OVERLAY", STYLE.fonts.text)
-
--- Initialize API
-BackendAPI:Init()
-stratHeader:SetPoint("TOP", 0, -65)
-stratHeader:SetTextColor(unpack(STYLE.colors.header))
-stratHeader:Hide()
-
--- Step control buttons
-nextStepBtn = CreateStyledButton(StrategyTab, "Next Step", 90, 22)
-nextStepBtn:SetPoint("TOPRIGHT", -80, -62)
-nextStepBtn:SetScript("OnClick", AdvanceScriptStep)
-nextStepBtn:Hide()
-
-resetStepBtn = CreateStyledButton(StrategyTab, "Reset", 70, 22)
-resetStepBtn:SetPoint("RIGHT", nextStepBtn, "LEFT", -5, 0)
-resetStepBtn:SetScript("OnClick", ResetScript)
-resetStepBtn:Hide()
-
-local stratScroll = CreateScrollFrame(StrategyTab, 360, 310)
-stratScroll:SetPoint("TOP", 0, -90)
-
--- Initialize
-RefreshStrategyDisplay()
-
--- ============================================================================
--- Settings Tab
--- ============================================================================
-
-local SettingsTab = CreateFrame("Frame", nil, MainFrame)
-SettingsTab:SetPoint("TOPLEFT", 15, -75)
-SettingsTab:SetPoint("BOTTOMRIGHT", -15, 15)
-TabContent["Settings"] = SettingsTab
-
-local settingsTitle = SettingsTab:CreateFontString(nil, "OVERLAY", STYLE.fonts.header)
-settingsTitle:SetPoint("TOP", 0, -10)
-settingsTitle:SetText("Settings")
-settingsTitle:SetTextColor(unpack(STYLE.colors.header))
-
--- Show in battle checkbox
-local battleCheck = CreateFrame("CheckButton", nil, SettingsTab, "UICheckButtonTemplate")
-battleCheck:SetPoint("TOPLEFT", 10, -40)
-battleCheck:SetChecked(PetWeaverDB.settings.showInBattle)
-battleCheck.text = battleCheck:CreateFontString(nil, "OVERLAY", STYLE.fonts.text)
-battleCheck.text:SetPoint("LEFT", battleCheck, "RIGHT", 5, 0)
-battleCheck.text:SetText("Auto-show during pet battles")
-battleCheck:SetScript("OnClick", function(self)
-    PetWeaverDB.settings.showInBattle = self:GetChecked()
-end)
-
--- Show with journal checkbox
-local journalCheck = CreateFrame("CheckButton", nil, SettingsTab, "UICheckButtonTemplate")
-journalCheck:SetPoint("TOPLEFT", 10, -70)
-journalCheck:SetChecked(PetWeaverDB.settings.showWithJournal)
-journalCheck.text = journalCheck:CreateFontString(nil, "OVERLAY", STYLE.fonts.text)
-journalCheck.text:SetPoint("LEFT", journalCheck, "RIGHT", 5, 0)
-journalCheck.text:SetText("Show with Pet Journal")
-journalCheck:SetScript("OnClick", function(self)
-    PetWeaverDB.settings.showWithJournal = self:GetChecked()
-end)
-
--- Backend integration checkbox
-local backendCheck = CreateFrame("CheckButton", nil, SettingsTab, "UICheckButtonTemplate")
-backendCheck:SetPoint("TOPLEFT", 10, -100)
-backendCheck:SetChecked(BackendAPI.useBackend)
-backendCheck.text = backendCheck:CreateFontString(nil, "OVERLAY", STYLE.fonts.text)
-backendCheck.text:SetPoint("LEFT", backendCheck, "RIGHT", 5, 0)
-backendCheck.text:SetText("Enable AI Backend (Requires server running)")
-backendCheck:SetScript("OnClick", function(self)
-    BackendAPI.useBackend = self:GetChecked()
-    print("PetWeaver: Backend " .. (BackendAPI.useBackend and "enabled" or "disabled"))
-end)
-
--- Statistics section
-local statsHeader = SettingsTab:CreateFontString(nil, "OVERLAY", STYLE.fonts.header)
-statsHeader:SetPoint("TOPLEFT", 10, -140)
-statsHeader:SetText("Statistics")
-statsHeader:SetTextColor(unpack(STYLE.colors.header))
-
--- Initialize stats if needed
-PetWeaverDB.stats = PetWeaverDB.stats or {
-    totalBattles = 0,
-    battlesWon = 0,
-    battlesLost = 0,
-}
-
-local statsText = SettingsTab:CreateFontString(nil, "OVERLAY", STYLE.fonts.text)
-statsText:SetPoint("TOPLEFT", 10, -165)
-statsText:SetText(string.format(
-    "Total Battles: %d\nWins: %d\nLosses: %d\nWin Rate: %.1f%%",
-    PetWeaverDB.stats.totalBattles,
-    PetWeaverDB.stats.battlesWon,
-    PetWeaverDB.stats.battlesLost,
-    PetWeaverDB.stats.totalBattles > 0 and (PetWeaverDB.stats.battlesWon / PetWeaverDB.stats.totalBattles * 100) or 0
-))
-statsText:SetJustifyH("LEFT")
-
--- Reset stats button
-local resetStatsBtn = CreateStyledButton(SettingsTab, "Reset Stats", 100, 25)
-resetStatsBtn:SetPoint("TOPLEFT", 10, -235)
-resetStatsBtn:SetScript("OnClick", function()
-    PetWeaverDB.stats.totalBattles = 0
-    PetWeaverDB.stats.battlesWon = 0
-    PetWeaverDB.stats.battlesLost = 0
-    statsText:SetText("Total Battles: 0\nWins: 0\nLosses: 0\nWin Rate: 0.0%")
-    print("PetWeaver: Statistics reset!")
-end)
-
--- Info section
-local infoHeader = SettingsTab:CreateFontString(nil, "OVERLAY", STYLE.fonts.header)
-infoHeader:SetPoint("TOPLEFT", 10, -280)
-infoHeader:SetText("About PetWeaver")
-infoHeader:SetTextColor(unpack(STYLE.colors.header))
-
-local infoText = SettingsTab:CreateFontString(nil, "OVERLAY", STYLE.fonts.small)
-infoText:SetPoint("TOPLEFT", 10, -305)
-infoText:SetText("Version: 2.0\n\nFeatures:\n• Real-time Battle Information\n• Team Save/Load System\n• Strategy Script Display\n• AI-Powered Recommendations\n• Auto-tracking Script Progress\n\nby Holocron")
-infoText:SetWidth(360)
-infoText:SetJustifyH("LEFT")
-
--- ============================================================================
--- Battle State Update Functions
--- ============================================================================
-
-local function UpdatePetDisplay(frame, owner, petIndex)
-    local petID = C_PetBattles.GetPetID(owner, petIndex)
-    
-    if not petID then
-        frame.name:SetText("Empty Slot")
-        frame.icon:SetTexture("Interface\\Icons\\INV_Misc_QuestionMark")
-        frame.healthBar:SetWidth(0)
-        frame.healthText:SetText("0 / 0")
-        frame.abilities:SetText("")
-        return
-    end
-    
-    -- Get pet info
-    local speciesID = C_PetBattles.GetPetSpeciesID(owner, petIndex)
-    local displayID, name, icon, petType = C_PetJournal.GetPetInfoBySpeciesID(speciesID)
-    local health = C_PetBattles.GetHealth(owner, petIndex)
-    local maxHealth = C_PetBattles.GetMaxHealth(owner, petIndex)
-    local level = C_PetBattles.GetLevel(owner, petIndex)
-    local quality = C_PetBattles.GetBreedQuality(owner, petIndex)
-    local isAlive = C_PetBattles.GetHealth(owner, petIndex) > 0
-    
-    -- Update display
-    frame.name:SetText(name .. " (Level " .. level .. ")")
-    frame.name:SetTextColor(GetQualityColor(quality))
-    frame.icon:SetTexture(icon)
-    
-    if not isAlive then
-        frame.icon:SetDesaturated(true)
-        frame.name:SetText(name .. " (Dead)")
-        frame.name:SetTextColor(0.5, 0.5, 0.5, 1)
-    else
-        frame.icon:SetDesaturated(false)
-    end
-    
-    -- Update health bar
-    local healthPercent = health / maxHealth
-    frame.healthBar:SetWidth(295 * healthPercent)
-    frame.healthBar:SetColorTexture(GetHealthColor(health, maxHealth))
-    frame.healthText:SetText(health .. " / " .. maxHealth)
-    
-    -- Get abilities
-    local abilityText = ""
-    for i = 1, 3 do
-        local abilityID = C_PetBattles.GetAbilityInfo(owner, petIndex, i)
-        if abilityID then
-            local name, icon, typeID = C_PetBattles.GetAbilityInfoByID(abilityID)
-            abilityText = abilityText .. (i > 1 and " | " or "") .. name
-        end
-    end
-    frame.abilities:SetText(abilityText)
-end
-
-local function UpdateBattleDisplay()
-    if not C_PetBattles.IsInBattle() then return end
-    
-    -- Update round counter
-    local currentRound = C_PetBattles.GetCurrentRound()
-    roundText:SetText("Round: " .. (currentRound or 0))
-    
-    -- Update ally pets
-    for i = 1, 3 do
-        UpdatePetDisplay(allyPetFrames[i], Enum.BattlePetOwner.Ally, i)
-    end
-    
-    -- Update enemy pets
-    for i = 1, 3 do
-        UpdatePetDisplay(enemyPetFrames[i], Enum.BattlePetOwner.Enemy, i)
-    end
-end
-
--- ============================================================================
--- Event Handlers
--- ============================================================================
-
-MainFrame:RegisterEvent("PET_BATTLE_OPENING_START")
-MainFrame:RegisterEvent("PET_BATTLE_CLOSE")
-MainFrame:RegisterEvent("PET_BATTLE_PET_ROUND_PLAYBACK_COMPLETE")
-MainFrame:RegisterEvent("PET_BATTLE_HEALTH_CHANGED")
-MainFrame:RegisterEvent("PET_BATTLE_PET_CHANGED")
-MainFrame:RegisterEvent("ADDON_LOADED")
-
-MainFrame:SetScript("OnEvent", function(self, event, arg1)
-    if event == "PET_BATTLE_OPENING_START" then
-        if PetWeaverDB.settings.showInBattle then
-            MainFrame:Show()
-        end
-        PetWeaver_SwitchTab("Battle")
-        UpdateBattleDisplay()
-        lastRound = 0
-        
-    elseif event == "PET_BATTLE_CLOSE" then
-        if not PetWeaverDB.settings.showWithJournal or not CollectionsJournal or not CollectionsJournal:IsShown() then
-            MainFrame:Hide()
-        end
-        
-    elseif event == "PET_BATTLE_PET_ROUND_PLAYBACK_COMPLETE" or 
-           event == "PET_BATTLE_HEALTH_CHANGED" or 
-           event == "PET_BATTLE_PET_CHANGED" then
-        UpdateBattleDisplay()
-        UpdateScriptProgress()
-        
-    elseif event == "ADDON_LOADED" and arg1 == "Blizzard_Collections" then
-        -- Hook to Pet Journal
-        if CollectionsJournal and PetWeaverDB.settings.showWithJournal then
-            hooksecurefunc(CollectionsJournal, "Show", function()
-                if not C_PetBattles.IsInBattle() then
-                    MainFrame:Show()
-                end
-            end)
-            hooksecurefunc(CollectionsJournal, "Hide", function()
-                if not C_PetBattles.IsInBattle() then
-                    MainFrame:Hide()
-                end
-            end)
-        end
-    end
-end)
-
--- ============================================================================
--- Slash Commands
--- ============================================================================
-
-SLASH_PETWEAVER1 = "/petweaver"
-SLASH_PETWEAVER2 = "/pw"
-
-SlashCmdList.PETWEAVER = function(msg)
-    if msg == "show" then
-        MainFrame:Show()
-    elseif msg == "hide" then
-        MainFrame:Hide()
-    else
-        if MainFrame:IsShown() then
-            MainFrame:Hide()
-        else
-            MainFrame:Show()
-        end
-    end
-end
-
--- ============================================================================
--- Combat Log Parser (For Trainer Data Validation)
--- ============================================================================
-
-local CombatLogParser = {
-    currentBattle = nil,
-    encounters = {},
-}
-
-function CombatLogParser:StartBattle()
-    if not C_PetBattles.IsInBattle() then return end
-    
-    self.currentBattle = {
+    local outcome = {
+        enemyName = enemyName,
+        won = (winner == Enum.BattlePetOwner.Ally),
         timestamp = time(),
-        encounterName = nil,
-        enemyPets = {},
-        allyPets = {},
-        rounds = {},
-        currentRound = 1,
+        teamUsed = addon.currentScript and addon.currentScript.name or "None",
+        rounds = addon.currentRound or 0
     }
     
-    -- Get encounter name (try to identify trainer/NPC name)
-    local numPets = C_PetBattles.GetNumPets(Enum.BattlePetOwner.Enemy)
-    if numPets > 0 then
-        local petID = C_PetBattles.GetPetID(Enum.BattlePetOwner.Enemy, 1)
-        if petID then
-            local speciesID, customName, level, xp, maxXp,  displayID, isFavorite, name = C_PetJournal.GetPetInfoByPetID(petID)
-            if name then
-                self.currentBattle.encounterName = name
-            end
-        end
-    end
-    
-    -- Capture enemy pets
-    for i = 1, numPets do
-        local petID = C_PetBattles.GetPetID(Enum.BattlePetOwner.Enemy, i)
-        if petID then
-            local speciesID, customName, level, xp, maxXp, displayID, isFavorite, speciesName = C_PetJournal.GetPetInfoByPetID(petID)
-            
-            local abilities = {}
-            for slot = 1, 3 do
-                local abilityID = C_PetBattles.GetAbilityInfo(Enum.BattlePetOwner.Enemy, i, slot)
-                if abilityID then
-                    local name, icon, petType = C_PetBattles.GetAbilityInfoByID(abilityID)
-                    table.insert(abilities, {
-                        slot = slot,
-                        abilityID = abilityID,
-                        name = name,
-                        icon = icon,
-                        petType = petType,
-                    })
-                end
-            end
-            
-            table.insert(self.currentBattle.enemyPets, {
-                index = i,
-                petID = petID,
-                speciesID = speciesID,
-                name = speciesName or customName or "Unknown",
-                level = level or 25,
-                maxHealth = C_PetBattles.GetMaxHealth(Enum.BattlePetOwner.Enemy, i),
-                power = C_PetBattles.GetPower(Enum.BattlePetOwner.Enemy, i),
-                speed = C_PetBattles.GetSpeed(Enum.BattlePetOwner.Enemy, i),
-                abilities = abilities,
-                movesUsed = {}, -- Track order of moves
-            })
-        end
-    end
-    
-    print("|cFF00FF00PetWeaver:|r Combat log started for: " .. (self.currentBattle.encounterName or "Unknown Encounter"))
-end
-
-function CombatLogParser:RecordMove(owner, petIndex, abilityID)
-    if not self.currentBattle then return end
-    
-    -- Only track enemy moves
-    if owner ~= Enum.BattlePetOwner.Enemy then return end
-    
-    local enemyPet = self.currentBattle.enemyPets[petIndex]
-    if not enemyPet then return end
-    
-    -- Get ability info
-    local name, icon, petType = C_PetBattles.GetAbilityInfoByID(abilityID)
-    
-    -- Record the move
-    table.insert(enemyPet.movesUsed, {
-        round = self.currentBattle.currentRound,
-        abilityID = abilityID,
-        name = name,
-        timestamp = time(),
-    })
-end
-
-function CombatLogParser:NextRound()
-    if not self.currentBattle then return end
-    self.currentBattle.currentRound = self.currentBattle.currentRound + 1
-end
-
-function CombatLogParser:EndBattle(victory)
-    if not self.currentBattle then return end
-    
-    self.currentBattle.victory = victory
-    self.currentBattle.endTime = time()
-    self.currentBattle.duration = self.currentBattle.endTime - self.currentBattle.timestamp
-    
-    -- Save to database
-    if not PetWeaverDB.combatLogs then
-        PetWeaverDB.combatLogs = {}
-    end
-    
-    table.insert(PetWeaverDB.combatLogs, self.currentBattle)
+    table.insert(PetWeaverDB.battleHistory, outcome)
     
     -- Keep only last 100 battles
-    while #PetWeaverDB.combatLogs > 100 do
-        table.remove(PetWeaverDB.combatLogs, 1)
+    if #PetWeaverDB.battleHistory > 100 then
+        table.remove(PetWeaverDB.battleHistory, 1)
     end
     
-    -- Export summary
-    self:ExportEncounterData()
-    
-    print("|cFF00FF00PetWeaver:|r Combat log saved - " .. 
-          (victory and "VICTORY" or "DEFEAT") .. 
-          " vs " .. (self.currentBattle.encounterName or "Unknown"))
-    
-    self.currentBattle = nil
-end
-
-function CombatLogParser:ExportEncounterData()
-    if not self.currentBattle then return end
-    
-    -- Create structured data for server upload
-    local encounterData = {
-        encounterName = self.currentBattle.encounterName,
-        timestamp = self.currentBattle.timestamp,
-        victory = self.currentBattle.victory,
-        enemyTeam = {},
-    }
-    
-    for _, pet in ipairs(self.currentBattle.enemyPets) do
-        table.insert(encounterData.enemyTeam, {
-            speciesID = pet.speciesID,
-            name = pet.name,
-            level = pet.level,
-            maxHealth = pet.maxHealth,
-            power = pet.power,
-            speed = pet.speed,
-            abilities = pet.abilities,
-            moveSequence = pet.movesUsed, -- Exact order of moves used
-        })
-    end
-    
-    -- Store in exportable format
-    if not PetWeaverDB.encounterDatabase then
-        PetWeaverDB.encounterDatabase = {}
-    end
-    
-    local encounterKey = self.currentBattle.encounterName or "Unknown"
-    
-    if not PetWeaverDB.encounterDatabase[encounterKey] then
-        PetWeaverDB.encounterDatabase[encounterKey] = {
-            name = encounterKey,
-            firstSeen = self.currentBattle.timestamp,
-            battles = 0,
-            victories = 0,
-            enemyTeams = {},
-        }
-    end
-    
-    local encounter = PetWeaverDB.encounterDatabase[encounterKey]
-    encounter.battles = encounter.battles + 1
-    if self.currentBattle.victory then
-        encounter.victories = encounter.victories + 1
-    end
-    encounter.lastSeen = self.currentBattle.timestamp
-    
-    -- Store this specific team composition and move pattern
-    table.insert(encounter.enemyTeams, encounterData.enemyTeam)
-    
-    print("|cFF00FF00PetWeaver:|r Encounter data exported for genetic algorithm")
-end
-
--- Hook into battle events to capture data
-local combatLogFrame = CreateFrame("Frame")
-combatLogFrame:RegisterEvent("PET_BATTLE_OPENING_START")
-combatLogFrame:RegisterEvent("PET_BATTLE_OVER")
-combatLogFrame:RegisterEvent("PET_BATTLE_PET_ROUND_PLAYBACK_COMPLETE")
-
-combatLogFrame:SetScript("OnEvent", function(self, event, ...)
-    if event == "PET_BATTLE_OPENING_START" then
-        CombatLogParser:StartBattle()
-        
-    elseif event == "PET_BATTLE_OVER" then
-        local winner = ...
-        local victory = (winner == Enum.BattlePetOwner.Ally)
-        CombatLogParser:EndBattle(victory)
-        
-    elseif event == "PET_BATTLE_PET_ROUND_PLAYBACK_COMPLETE" then
-        CombatLogParser:NextRound()
-        
-        -- Try to capture what ability was just used
-        -- This is tricky - WoW doesn't give us a direct event
-        -- We can infer from active pet and abilities
-        local activeEnemy = C_PetBattles.GetActivePet(Enum.BattlePetOwner.Enemy)
-        if activeEnemy then
-            -- Get the most recently used ability (requires combat log parsing)
-            -- For now, we'll track via the ability history in combat log
-        end
-    end
-end)
-
--- Add export command
-SLASH_PETWEAVEREXPORT1 = "/pwexport"
-SlashCmdList["PETWEAVEREXPORT"] = function()
-    if PetWeaverDB.encounterDatabase then
-        local count = 0
-        for _ in pairs(PetWeaverDB.encounterDatabase) do
-            count = count + 1
-        end
-        print("|cFF00FF00PetWeaver:|r Encounter database has " .. count .. " encounters")
-        print("Data location: WTF/Account/YOURNAME/SavedVariables/PetWeaver.lua")
-        print("Upload encounterDatabase table to your server for genetic algorithm")
+    if outcome.won then
+        print("|cff00ff00PetWeaver:|r Victory! Logged to battle history")
     else
-        print("|cFFFF0000PetWeaver:|r No encounter data found. Fight some trainers first!")
+        print("|cff00ff00PetWeaver:|r Defeat. Logged to battle history")
+    end
+    
+    -- Reset script tracking
+    addon.currentScript = nil
+    addon.currentRound = 0
+    addon.scriptStep = 1
+end
+
+-- 4. Journal Replacement
+function addon:HookPetJournal()
+    if not PetJournal then return end
+    
+    -- Create our replacement UI parented to PetJournal
+    local f = CreateFrame("Frame", "PetWeaverFrame", PetJournal)
+    f:SetAllPoints(PetJournal)
+    f:SetFrameLevel(PetJournal:GetFrameLevel() + 10)
+    addon.Frame = f
+    
+    -- Background
+    f.bg = f:CreateTexture(nil, "BACKGROUND")
+    f.bg:SetAllPoints()
+    f.bg:SetColorTexture(0.05, 0.05, 0.05, 0.95)
+    
+    -- Top Bar
+    local topBar = CreateFrame("Frame", nil, f)
+    topBar:SetSize(f:GetWidth(), 40)
+    topBar:SetPoint("TOP", 0, -20)
+    
+    local title = topBar:CreateFontString(nil, "OVERLAY", "GameFontNormalHuge")
+    title:SetPoint("LEFT", 20, 0)
+    title:SetText("PetWeaver")
+    title:SetTextColor(1, 0.82, 0)
+    
+    -- Tab Buttons
+    local tabs = {"Teams", "Leveling", "Battles", "Collections"}
+    local tabButtons = {}
+    
+    for i, tabName in ipairs(tabs) do
+        local btn = CreateFrame("Button", nil, topBar, "UIPanelButtonTemplate")
+        btn:SetSize(90, 30)
+        btn:SetPoint("TOPLEFT", 120 + (i-1)*95, -5)
+        btn:SetText(tabName)
+        btn.tabName = tabName
+        
+        btn:SetScript("OnClick", function(self)
+            addon:ShowTab(self.tabName)
+            for _, b in pairs(tabButtons) do
+                b:UnlockHighlight()
+            end
+            self:LockHighlight()
+        end)
+        
+        tabButtons[tabName] = btn
+    end
+    
+    -- Content Frame (ScrollFrame)
+    local scrollFrame = CreateFrame("ScrollFrame", nil, f, "UIPanelScrollFrameTemplate")
+    scrollFrame:SetPoint("TOPLEFT", 10, -70)
+    scrollFrame:SetPoint("BOTTOMRIGHT", -30, 40)
+    
+    local scrollChild = CreateFrame("Frame", nil, scrollFrame)
+    scrollChild:SetSize(600, 800)
+    scrollFrame:SetScrollChild(scrollChild)
+    
+    addon.ScrollChild = scrollChild
+    addon.TabButtons = tabButtons
+    
+    -- Toggle Button (Top-Right Corner)
+    local toggleBtn = CreateFrame("CheckButton", nil, f, "UICheckButtonTemplate")
+    toggleBtn:SetSize(24, 24)
+    toggleBtn:SetPoint("TOPRIGHT", -40, -25)
+    toggleBtn:SetChecked(true)
+    toggleBtn:SetFrameLevel(f:GetFrameLevel() + 20) -- Above everything
+    
+    toggleBtn.text = toggleBtn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    toggleBtn.text:SetPoint("RIGHT", toggleBtn, "LEFT", -5, 0)
+    toggleBtn.text:SetText("PetWeaver")
+    
+    toggleBtn:SetScript("OnClick", function(self)
+        if self:GetChecked() then
+            f:Show()
+        else
+            f:Hide()
+        end
+    end)
+    
+    -- Show Teams tab by default
+    addon:ShowTab("Teams")
+    tabButtons["Teams"]:LockHighlight()
+    
+    print("|cff00ff00PetWeaver:|r Journal Replaced.")
+end
+
+-- 4. Tab Rendering
+function addon:ShowTab(tabName)
+    if not addon.ScrollChild then return end
+    
+    -- Clear current content
+    for _, child in pairs({addon.ScrollChild:GetChildren()}) do
+        child:Hide()
+    end
+    
+    if tabName == "Teams" then
+        addon:RenderTeams()
+    elseif tabName == "Leveling" then
+        addon:RenderLeveling()
+    elseif tabName == "Battles" then
+        addon:RenderBattles()
+    elseif tabName == "Collections" then
+        addon:RenderCollections()
     end
 end
 
--- ============================================================================
--- Initialization
--- ============================================================================
+function addon:RenderTeams()
+    local y = -10
+    
+    -- New Team Button
+    local newTeamBtn = CreateFrame("Button", nil, addon.ScrollChild, "UIPanelButtonTemplate")
+    newTeamBtn:SetSize(200, 30)
+    newTeamBtn:SetPoint("TOPLEFT", 10, y)
+    newTeamBtn:SetText("+ New Team")
+    newTeamBtn:SetScript("OnClick", function()
+        -- Create empty team for now
+        table.insert(PetWeaverDB.teams, {
+            name = "Team " .. (#PetWeaverDB.teams + 1),
+            pets = {},
+            enemyName = nil
+        })
+        print("|cff00ff00PetWeaver:|r Created new team")
+        addon:RenderTeams()
+    end)
+    y = y - 50
+    
+    -- Teams List Header
+    local header = addon.ScrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    header:SetPoint("TOPLEFT", 10, y)
+    header:SetText("Saved Teams (" .. #PetWeaverDB.teams .. ")")
+    y = y - 35
+    
+    if #PetWeaverDB.teams == 0 then
+        local noTeams = addon.ScrollChild:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+        noTeams:SetPoint("TOPLEFT", 20, y)
+        noTeams:SetText("No teams saved yet.\nClick '+ New Team' to create one.")
+    else
+        for i, team in ipairs(PetWeaverDB.teams) do
+            local teamFrame = CreateFrame("Frame", nil, addon.ScrollChild, "BackdropTemplate")
+            teamFrame:SetSize(550, 85)
+            teamFrame:SetPoint("TOPLEFT", 10, y)
+            teamFrame:SetBackdrop({
+                bgFile = "Interface\\Buttons\\WHITE8X8",
+                edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+                tile = false, edgeSize = 12,
+                insets = { left = 2, right = 2, top = 2, bottom = 2 }
+            })
+            teamFrame:SetBackdropColor(0.1, 0.1, 0.1, 0.9)
+            teamFrame:SetBackdropBorderColor(0.4, 0.35, 0.2, 1)
+            
+            -- Team Name
+            local teamName = teamFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+            teamName:SetPoint("TOPLEFT", 10, -8)
+            teamName:SetText(team.name or "Unnamed Team")
+            teamName:SetTextColor(1, 0.82, 0)
+            
+            -- Delete Button
+            local deleteBtn = CreateFrame("Button", nil, teamFrame, "UIPanelButtonTemplate")
+            deleteBtn:SetSize(60, 20)
+            deleteBtn:SetPoint("TOPRIGHT", -10, -8)
+            deleteBtn:SetText("Delete")
+            deleteBtn:SetScript("OnClick", function()
+                table.remove(PetWeaverDB.teams, i)
+                addon:RenderTeams()
+            end)
+            
+            -- Pet Portraits (Rematch Style)
+            local petY = -35
+            if team.pets and #team.pets > 0 then
+                for p = 1, math.min(3, #team.pets) do
+                    local pet = team.pets[p]
+                    if pet and pet.speciesID then
+                        -- Pet Portrait Frame
+                        local petFrame = CreateFrame("Frame", nil, teamFrame, "BackdropTemplate")
+                        petFrame:SetSize(55, 55)
+                        petFrame:SetPoint("TOPLEFT", 10 + (p-1)*60, petY)
+                        petFrame:SetBackdrop({
+                            bgFile = "Interface\\Buttons\\WHITE8X8",
+                            edgeFile = "Interface\\Buttons\\WHITE8X8",
+                            tile = false, edgeSize = 1,
+                            insets = { left = 1, right = 1, top = 1, bottom = 1 }
+                        })
+                        petFrame:SetBackdropColor(0, 0, 0, 1)
+                        petFrame:SetBackdropBorderColor(0.5, 0.5, 0.5, 1)
+                        
+                        -- Pet Icon
+                        local icon = petFrame:CreateTexture(nil, "ARTWORK")
+                        icon:SetPoint("TOPLEFT", 2, -2)
+                        icon:SetPoint("BOTTOMRIGHT", -2, 2)
+                        
+                        local _, petIcon = C_PetJournal.GetPetInfoBySpeciesID(pet.speciesID)
+                        if petIcon then
+                            icon:SetTexture(petIcon)
+                        else
+                            icon:SetColorTexture(0.2, 0.2, 0.2, 1)
+                        end
+                        
+                        -- Level Badge
+                        if pet.level then
+                            local levelText = petFrame:CreateFontString(nil, "OVERLAY", "NumberFontNormalSmall")
+                            levelText:SetPoint("BOTTOMRIGHT", -2, 2)
+                            levelText:SetText(pet.level)
+                            levelText:SetTextColor(1, 1, 1)
+                        end
+                    end
+                end
+            else
+                -- Empty slots
+                for p = 1, 3 do
+                    local emptyFrame = CreateFrame("Frame", nil, teamFrame, "BackdropTemplate")
+                    emptyFrame:SetSize(55, 55)
+                    emptyFrame:SetPoint("TOPLEFT", 10 + (p-1)*60, petY)
+                    emptyFrame:SetBackdrop({
+                        bgFile = "Interface\\Buttons\\WHITE8X8",
+                        edgeFile = "Interface\\Buttons\\WHITE8X8",
+                        tile = false, edgeSize = 1,
+                        insets = { left = 1, right = 1, top = 1, bottom = 1 }
+                    })
+                    emptyFrame:SetBackdropColor(0.05, 0.05, 0.05, 0.8)
+                    emptyFrame:SetBackdropBorderColor(0.3, 0.3, 0.3, 1)
+                    
+                    local plusText = emptyFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+                    plusText:SetPoint("CENTER")
+                    plusText:SetText("+")
+                    plusText:SetTextColor(0.5, 0.5, 0.5)
+                end
+            end
+            
+            y = y - 95
+        end
+    end
+    
+    addon.ScrollChild:SetHeight(math.abs(y) + 100)
+end
 
--- Set initial tab
-PetWeaver_SwitchTab(PetWeaverDB.settings.currentTab or "Battle")
+function addon:RenderLeveling()
+    local y = -10
+    
+    -- Initialize leveling queue if needed
+    PetWeaverDB.levelingQueue = PetWeaverDB.levelingQueue or {}
+    
+    local header = addon.ScrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    header:SetPoint("TOPLEFT", 10, y)
+    header:SetText("Leveling Queue (" .. #PetWeaverDB.levelingQueue .. " pets)")
+    y = y - 35
+    
+    -- Add Pet Button
+    local addBtn = CreateFrame("Button", nil, addon.ScrollChild, "UIPanelButtonTemplate")
+    addBtn:SetSize(180, 30)
+    addBtn:SetPoint("TOPLEFT", 10, y)
+    addBtn:SetText("+ Add Pet to Queue")
+    addBtn:SetScript("OnClick", function()
+        -- Get first pet under level 25
+        local numPets = C_PetJournal.GetNumPets()
+        for i = 1, numPets do
+            local petID, speciesID, owned, customName, level = C_PetJournal.GetPetInfoByIndex(i)
+            if petID and level < 25 then
+                -- Check if not already in queue
+                local found = false
+                for _, queuedID in ipairs(PetWeaverDB.levelingQueue) do
+                    if queuedID == petID then
+                        found = true
+                        break
+                    end
+                end
+                
+                if not found then
+                    table.insert(PetWeaverDB.levelingQueue, petID)
+                    addon:RenderLeveling()
+                    return
+                end
+            end
+        end
+        print("|cff00ff00PetWeaver:|r No eligible pets found (all max level or already queued)")
+    end)
+    y = y - 50
+    
+    -- Clear Queue Button
+    local clearBtn = CreateFrame("Button", nil, addon.ScrollChild, "UIPanelButtonTemplate")
+    clearBtn:SetSize(120, 25)
+    clearBtn:SetPoint("TOPLEFT", 200, y + 25)
+    clearBtn:SetText("Clear Queue")
+    clearBtn:SetScript("OnClick", function()
+        wipe(PetWeaverDB.levelingQueue)
+        addon:RenderLeveling()
+    end)
+    
+    if #PetWeaverDB.levelingQueue == 0 then
+        local empty = addon.ScrollChild:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+        empty:SetPoint("TOPLEFT", 20, y)
+        empty:SetText("Queue is empty.\nAdd pets under level 25 to level them up in battles.")
+    else
+        -- Display queued pets
+        for i, petID in ipairs(PetWeaverDB.levelingQueue) do
+            local _, customName, level, _, _, _, _, petName, petIcon = C_PetJournal.GetPetInfoByPetID(petID)
+            
+            if petID then
+                local petFrame = CreateFrame("Frame", nil, addon.ScrollChild, "BackdropTemplate")
+                petFrame:SetSize(550, 50)
+                petFrame:SetPoint("TOPLEFT", 10, y)
+                petFrame:SetBackdrop({
+                    bgFile = "Interface\\Buttons\\WHITE8X8",
+                    edgeFile = "Interface\\Buttons\\WHITE8X8",
+                    tile = false, edgeSize = 1,
+                    insets = { left = 1, right = 1, top = 1, bottom = 1 }
+                })
+                petFrame:SetBackdropColor(0.1, 0.1, 0.1, 0.8)
+                petFrame:SetBackdropBorderColor(0.3, 0.3, 0.3, 1)
+                
+                -- Pet Icon
+                local icon = petFrame:CreateTexture(nil, "ARTWORK")
+                icon:SetSize(40, 40)
+                icon:SetPoint("LEFT", 5, 0)
+                if petIcon then
+                    icon:SetTexture(petIcon)
+                else
+                    icon:SetColorTexture(0.2, 0.2, 0.2, 1)
+                end
+                
+                -- Pet Name
+                local name = petFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+                name:SetPoint("LEFT", icon, "RIGHT", 10, 5)
+                name:SetText((customName or petName or "Unknown Pet"))
+                
+                -- Level
+                local lvl = petFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+                lvl:SetPoint("LEFT", icon, "RIGHT", 10, -10)
+                lvl:SetText("Level " .. (level or 1))
+                lvl:SetTextColor(0.5, 1, 0.5)
+                
+                -- Queue Position
+                local pos = petFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+                pos:SetPoint("LEFT", 300, 0)
+                pos:SetText("#" .. i)
+                pos:SetTextColor(1, 0.82, 0)
+                
+                -- Remove Button
+                local removeBtn = CreateFrame("Button", nil, petFrame, "UIPanelButtonTemplate")
+                removeBtn:SetSize(70, 25)
+                removeBtn:SetPoint("RIGHT", -10, 0)
+                removeBtn:SetText("Remove")
+                removeBtn:SetScript("OnClick", function()
+                    table.remove(PetWeaverDB.levelingQueue, i)
+                    addon:RenderLeveling()
+                end)
+                
+                y = y - 55
+            end
+        end
+    end
+    
+    addon.ScrollChild:SetHeight(math.abs(y) + 100)
+end
 
-print(ADDON_NAME .. ": Loaded! Use /petweaver or /pw to toggle.")
-print(ADDON_NAME .. ": Version 2.0 - Full-Featured Pet Battle Assistant")
-print(ADDON_NAME .. ": Features: Battle Info | Team Management | Strategy Scripts | AI Integration")
-print(ADDON_NAME .. ": Combat Log: Capturing trainer data for genetic algorithm validation")
+function addon:RenderBattles()
+    local y = -10
+    
+    local header = addon.ScrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    header:SetPoint("TOPLEFT", 10, y)
+    header:SetText("Battle History (" .. #PetWeaverDB.battleHistory .. " battles)")
+    y = y - 35
+    
+    -- Stats Summary
+    local wins = 0
+    local losses = 0
+    for _, battle in ipairs(PetWeaverDB.battleHistory) do
+        if battle.won then
+            wins = wins + 1
+        else
+            losses = losses + 1
+        end
+    end
+    
+    if #PetWeaverDB.battleHistory > 0 then
+        local winRate = string.format("%.1f", (wins / #PetWeaverDB.battleHistory) * 100)
+        
+        local statsBox = CreateFrame("Frame", nil, addon.ScrollChild, "BackdropTemplate")
+        statsBox:SetSize(550, 60)
+        statsBox:SetPoint("TOPLEFT", 10, y)
+        statsBox:SetBackdrop({
+            bgFile = "Interface\\Buttons\\WHITE8X8",
+            edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+            tile = false, edgeSize = 12,
+            insets = { left = 2, right = 2, top = 2, bottom = 2 }
+        })
+        statsBox:SetBackdropColor(0.1, 0.1, 0.1, 0.9)
+        statsBox:SetBackdropBorderColor(0.4, 0.35, 0.2, 1)
+        
+        local statsText = statsBox:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        statsText:SetPoint("LEFT", 15, 0)
+        statsText:SetText(string.format("Wins: |cff00ff00%d|r  |  Losses: |cffff0000%d|r  |  Win Rate: |cffffd700%s%%|r", wins, losses, winRate))
+        
+        y = y - 75
+    end
+    
+    -- Clear History Button
+    local clearBtn = CreateFrame("Button", nil, addon.ScrollChild, "UIPanelButtonTemplate")
+    clearBtn:SetSize(120, 25)
+    clearBtn:SetPoint("TOPRIGHT", addon.ScrollChild, "TOPRIGHT", -10, -10)
+    clearBtn:SetText("Clear History")
+    clearBtn:SetScript("OnClick", function()
+        wipe(PetWeaverDB.battleHistory)
+        addon:RenderBattles()
+    end)
+    
+    if #PetWeaverDB.battleHistory == 0 then
+        local empty = addon.ScrollChild:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+        empty:SetPoint("TOPLEFT", 20, y)
+        empty:SetText("No battles recorded yet.\nComplete pet battles to see your history here.")
+    else
+        -- Show recent battles (last 20)
+        local recentBattles = {}
+        for i = math.max(1, #PetWeaverDB.battleHistory - 19), #PetWeaverDB.battleHistory do
+            table.insert(recentBattles, 1, PetWeaverDB.battleHistory[i])
+        end
+        
+        for i, battle in ipairs(recentBattles) do
+            local battleFrame = CreateFrame("Frame", nil, addon.ScrollChild, "BackdropTemplate")
+            battleFrame:SetSize(550, 45)
+            battleFrame:SetPoint("TOPLEFT", 10, y)
+            battleFrame:SetBackdrop({
+                bgFile = "Interface\\Buttons\\WHITE8X8",
+                edgeFile = "Interface\\Buttons\\WHITE8X8",
+                tile = false, edgeSize = 1,
+                insets = { left = 1, right = 1, top = 1, bottom = 1 }
+            })
+            
+            if battle.won then
+                battleFrame:SetBackdropColor(0, 0.15, 0, 0.8)
+                battleFrame:SetBackdropBorderColor(0, 0.5, 0, 1)
+            else
+                battleFrame:SetBackdropColor(0.15, 0, 0, 0.8)
+                battleFrame:SetBackdropBorderColor(0.5, 0, 0, 1)
+            end
+            
+            -- Enemy Name
+            local enemyText = battleFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+            enemyText:SetPoint("LEFT", 10, 8)
+            enemyText:SetText((battle.won and "|cff00ff00Victory|r" or "|cffff0000Defeat|r") .. " vs " .. battle.enemyName)
+            
+            -- Team Used
+            local teamText = battleFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+            teamText:SetPoint("LEFT", 10, -8)
+            teamText:SetText("Team: " .. (battle.teamUsed or "None"))
+            teamText:SetTextColor(0.7, 0.7, 0.7)
+            
+            -- Rounds
+            local rounds = battleFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+            rounds:SetPoint("RIGHT", -10, 0)
+            rounds:SetText(battle.rounds .. " rounds")
+            rounds:SetTextColor(0.5, 0.5, 0.5)
+            
+            y = y - 50
+        end
+    end
+    
+    addon.ScrollChild:SetHeight(math.abs(y) + 100)
+end
+
+function addon:RenderCollections()
+    local y = -10
+    
+    local header = addon.ScrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    header:SetPoint("TOPLEFT", 10, y)
+    header:SetText("Encounter Database")
+    y = y - 35
+    
+    local encounterCount = 0
+    for _ in pairs(PetWeaverDB.encounterDatabase) do
+        encounterCount = encounterCount + 1
+    end
+    
+    local subheader = addon.ScrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    subheader:SetPoint("TOPLEFT", 10, y)
+    subheader:SetText(encounterCount .. " encounters available")
+    subheader:SetTextColor(0.7, 0.7, 0.7)
+    y = y - 35
+    
+    -- Category filter buttons (could expand later)
+    local categories = {"all", "daily", "family_familiar", "world_quest"}
+    local selectedCategory = "all"
+    
+    if encounterCount == 0 then
+        local empty = addon.ScrollChild:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+        empty:SetPoint("TOPLEFT", 20, y)
+        empty:SetText("No encounters in database.\\nEncounters will be loaded from data files.")
+    else
+        -- Display encounters
+        for encounterName, encounter in pairs(PetWeaverDB.encounterDatabase) do
+            local encounterFrame = CreateFrame("Frame", nil, addon.ScrollChild, "BackdropTemplate")
+            encounterFrame:SetSize(550, 80)
+            encounterFrame:SetPoint("TOPLEFT", 10, y)
+            encounterFrame:SetBackdrop({
+                bgFile = "Interface\\Buttons\\WHITE8X8",
+                edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+                tile = false, edgeSize = 12,
+                insets = { left = 2, right = 2, top = 2, bottom = 2 }
+            })
+            encounterFrame:SetBackdropColor(0.1, 0.1, 0.1, 0.9)
+            encounterFrame:SetBackdropBorderColor(0.4, 0.35, 0.2, 1)
+            
+            -- Encounter Name
+            local nameText = encounterFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+            nameText:SetPoint("TOPLEFT", 10, -8)
+            nameText:SetText(encounter.displayName or encounterName)
+            nameText:SetTextColor(1, 0.82, 0)
+            
+            -- Zone and Category
+            local infoText = encounterFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+            infoText:SetPoint("TOPLEFT", 10, -28)
+            infoText:SetText(string.format("%s  |  %s  |  Level %d", 
+                encounter.zone or "Unknown", 
+                encounter.category or "unknown",
+                encounter.recommendedLevel or 25))
+            infoText:SetTextColor(0.7, 0.7, 0.7)
+            
+            -- Pet count
+            local petCount = encounterFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+            petCount:SetPoint("TOPLEFT", 10, -48)
+            petCount:SetText((encounter.pets and #encounter.pets or 0) .. " enemy pets")
+            
+            -- Difficulty indicator
+            local difficultyColors = {
+                easy = {0, 1, 0},
+                medium = {1, 0.82, 0},
+                hard = {1, 0, 0}
+            }
+            local diffColor = difficultyColors[encounter.difficulty] or {0.5, 0.5, 0.5}
+            
+            local difficulty = encounterFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+            difficulty:SetPoint("TOPRIGHT", -10, -28)
+            difficulty:SetText(string.upper(encounter.difficulty or "Unknown"))
+            difficulty:SetTextColor(diffColor[1], diffColor[2], diffColor[3])
+            
+            y = y - 90
+        end
+    end
+    
+    addon.ScrollChild:SetHeight(math.abs(y) + 100)
+end
+
+-- 5. Slash Commands
+SLASH_PETWEAVER1 = "/pw"
+SlashCmdList["PETWEAVER"] = function(msg)
+    if addon.Frame then
+        if addon.Frame:IsShown() then
+            addon.Frame:Hide()
+        else
+            addon.Frame:Show()
+        end
+    end
+end
+
+-- Auto Battle command (for keybinding)
+SLASH_PWAUTOBATTLE1 = "/pwab"
+SlashCmdList["PWAUTOBATTLE"] = function(msg)
+    addon:ExecuteAutoBattleMove()
+end
+
+print("|cff00ff00PetWeaver:|r Loaded. Use /pw to toggle, /pwab for auto battle.")
+
+-- Create Minimap Button
+local function CreateMinimapButton()
+    if not _G["HolocronMinimap-1.0"] then return end
+    
+    local MinimapLib = _G["HolocronMinimap-1.0"]
+    addon.minimapButton = MinimapLib:CreateMinimapButton("PetWeaver", {
+        icon = "Interface\\Icons\\PetJournalPortrait",
+        tooltip = "PetWeaver",
+        tooltipText = "Automated pet battles",
+        db = PetWeaverDB.settings,
+        OnLeftClick = function() 
+            if addon.BattleFrame then
+                if addon.BattleFrame:IsShown() then
+                    addon.BattleFrame:Hide()
+                else  
+                    addon.BattleFrame:Show()
+                end
+            end
+        end,
+        OnRightClick = function() 
+            if addon.optionsPanel then
+                InterfaceOptionsFrame_OpenToCategory(addon.optionsPanel)
+                InterfaceOptionsFrame_OpenToCategory(addon.optionsPanel) -- Call twice for Blizzard bug
+            end
+        end
+    })
+end
+
+-- Create Options Panel
+function addon:CreateOptionsPanel()
+    local OptionsLib = _G["HolocronOptions-1.0"]
+    if not OptionsLib then return end
+    
+    local panel = OptionsLib:CreateOptionsPanel("PetWeaver", {
+        title = "PetWeaver",
+        subtitle = "Automated pet battle manager with 31,431 ready-to-use strategies",
+        onDefault = function()
+            PetWeaverDB.settings = {
+                autoBattle = false,
+                autoLoadTeams = true,
+                showCoachMode = true,
+                uiScale = 1.0
+            }
+            print("|cff00ff00PetWeaver:|r Settings reset to defaults")
+            ReloadUI()
+        end
+    })
+    
+    -- Battle Settings
+    panel:AddHeader("Battle Automation")
+    
+    panel:AddCheckbox({
+        name = "Auto-Battle",
+        tooltip = "Automatically execute battle scripts",
+        get = function() return PetWeaverDB.settings.autoBattle end,
+        set = function(val) PetWeaverDB.settings.autoBattle = val end
+    })
+    
+    panel:AddCheckbox({
+        name = "Auto-Load Teams",
+        tooltip = "Automatically load matching teams when encountering known enemies",
+        get = function() return PetWeaverDB.settings.autoLoadTeams ~= false end,
+        set = function(val) PetWeaverDB.settings.autoLoadTeams = val end
+    })
+    
+    panel:AddCheckbox({
+        name = "Show Coach Mode",
+        tooltip = "Display battle tips and suggestions",
+        get = function() return PetWeaverDB.settings.showCoachMode ~= false end,
+        set = function(val) PetWeaverDB.settings.showCoachMode = val end
+    })
+    
+    -- Display Settings
+    panel:AddHeader("Display")
+    
+    panel:AddSlider({
+        name = "UI Scale",
+        min = 0.5,
+        max = 2.0,
+        step = 0.1,
+        minText = "50%",
+        maxText = "200%",
+        format = "UI Scale: %.1f",
+        get = function() return PetWeaverDB.settings.uiScale or 1.0 end,
+        set = function(val) 
+            PetWeaverDB.settings.uiScale = val
+            if addon.BattleFrame then
+                addon.BattleFrame:SetScale(val)
+            end
+        end
+    })
+    
+    -- Stats
+    panel:AddHeader("Statistics")
+    
+    local wins = 0
+    local losses = 0
+    for _, battle in ipairs(PetWeaverDB.battleHistory or {}) do
+        if battle.won then wins = wins + 1 else losses = losses + 1 end
+    end
+    
+    panel:AddDescription(string.format("Total Battles: %d | Wins: %d | Losses: %d", wins + losses, wins, losses))
+    panel:AddDescription(string.format("Loaded Teams: %d | Encounters: %d", #PetWeaverDB.teams, #PetWeaverDB.encounterDatabase))
+    
+    -- Minimap
+    panel:AddHeader("Minimap Button")
+    
+    panel:AddCheckbox({
+        name = "Show Minimap Button",
+        get = function() return not PetWeaverDB.settings.minimapHidden end,
+        set = function(val) 
+            PetWeaverDB.settings.minimapHidden = not val
+            if addon.minimapButton then
+                if val then
+                    addon.minimapButton:Show()
+                else
+                    addon.minimapButton:Hide()
+                end
+            end
+        end
+    })
+    
+    addon.optionsPanel = panel
+end
+
+-- Initialize minimap and options on login
+C_Timer.After(1, function()
+    CreateMinimapButton()
+    addon:CreateOptionsPanel()
+end)

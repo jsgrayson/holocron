@@ -10,6 +10,10 @@ echo "========================================"
 echo "   Holocron Addon Packager"
 echo "========================================"
 
+# Install Libraries
+echo "⬇️  Fetching Libraries..."
+python3 setup_libs.py
+
 # Function to zip an addon
 package_addon() {
     local name=$1

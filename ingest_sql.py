@@ -95,6 +95,46 @@ def init_db():
         )
     """)
 
+    # 7. Completed Quests
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS completed_quests (
+            character_guid TEXT,
+            quest_id INTEGER,
+            last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (character_guid, quest_id)
+        )
+    """)
+
+    # 8. Mounts
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS mounts (
+            character_guid TEXT,
+            mount_id INTEGER,
+            last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (character_guid, mount_id)
+        )
+    """)
+    
+    # 9. Heirlooms
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS heirlooms (
+            character_guid TEXT,
+            item_id INTEGER,
+            last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (character_guid, item_id)
+        )
+    """)
+
+    # 10. Pets
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS pets (
+            character_guid TEXT,
+            species_id INTEGER,
+            last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (character_guid, species_id)
+        )
+    """)
+
     conn.commit()
     conn.close()
     print("✓ Database initialized (SQLite)")
@@ -130,6 +170,9 @@ def ingest_all():
         print(f"Parsing {dp_file}...")
         data = parse_lua_table(dp_file)
         ingest_inventory(data)
+        ingest_recipes(data)
+        ingest_quests(data)
+        ingest_collections(data)
     else:
         print(f"Skipping Inventory: {dp_file} not found.")
 
@@ -255,6 +298,134 @@ def ingest_inventory(data):
         
     except Exception as e:
         print(f"Error ingesting inventory: {e}")
+    finally:
+        conn.close()
+
+def ingest_recipes(data):
+    """
+    Ingest DeepPockets recipe data.
+    """
+    conn = get_db_connection()
+    cur = conn.cursor()
+    
+    try:
+        # Structure: global.Recipes[CharacterKey][ProfID] = { name, recipes, timestamp }
+        db_global = data.get("global", {})
+        recipes_db = db_global.get("Recipes", {})
+        
+        count = 0
+        for char_key, professions in recipes_db.items():
+            for prof_id, prof_data in professions.items():
+                # prof_data has 'recipes' which is a list of IDs
+                recipe_ids = prof_data.get("recipes", [])
+                
+                rows = [(char_key, rid, prof_id) for rid in recipe_ids]
+                
+                cur.executemany("""
+                    INSERT INTO recipes (character_guid, recipe_id, profession_id, last_updated)
+                    VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+                    ON CONFLICT(character_guid, recipe_id) DO UPDATE SET
+                        last_updated = CURRENT_TIMESTAMP
+                """, rows)
+                
+                count += len(rows)
+                
+        conn.commit()
+        print(f"✓ Ingested {count} recipes for {len(recipes_db)} characters")
+        
+    except Exception as e:
+        print(f"Error ingesting recipes: {e}")
+    finally:
+        conn.close()
+
+def ingest_quests(data):
+    """
+    Ingest DeepPockets quest data.
+    """
+    conn = get_db_connection()
+    cur = conn.cursor()
+    
+    try:
+        # Structure: global.Quests[CharacterKey] = [qID, qID, ...]
+        db_global = data.get("global", {})
+        quests_db = db_global.get("Quests", {})
+        
+        count = 0
+        for char_key, quest_list in quests_db.items():
+            if not quest_list: continue
+            
+            rows = [(char_key, qid) for qid in quest_list]
+            
+            cur.executemany("""
+                INSERT INTO completed_quests (character_guid, quest_id, last_updated)
+                VALUES (?, ?, CURRENT_TIMESTAMP)
+                ON CONFLICT(character_guid, quest_id) DO NOTHING
+            """, rows)
+            
+            count += len(rows)
+            
+        conn.commit()
+        print(f"✓ Ingested {count} completed quests for {len(quests_db)} characters")
+        
+    except Exception as e:
+        print(f"Error ingesting quests: {e}")
+    finally:
+        conn.close()
+
+def ingest_collections(data):
+    """
+    Ingest DeepPockets collection data (Mounts, Heirlooms).
+    """
+    conn = get_db_connection()
+    cur = conn.cursor()
+    
+    try:
+        db_global = data.get("global", {})
+        
+        # Mounts
+        mounts_db = db_global.get("Mounts", {})
+        m_count = 0
+        for char_key, m_list in mounts_db.items():
+            if not m_list: continue
+            rows = [(char_key, mid) for mid in m_list]
+            cur.executemany("""
+                INSERT INTO mounts (character_guid, mount_id, last_updated)
+                VALUES (?, ?, CURRENT_TIMESTAMP)
+                ON CONFLICT(character_guid, mount_id) DO NOTHING
+            """, rows)
+            m_count += len(rows)
+            
+        # Heirlooms
+        heirlooms_db = db_global.get("Heirlooms", {})
+        h_count = 0
+        for char_key, h_list in heirlooms_db.items():
+            if not h_list: continue
+            rows = [(char_key, hid) for hid in h_list]
+            cur.executemany("""
+                INSERT INTO heirlooms (character_guid, item_id, last_updated)
+                VALUES (?, ?, CURRENT_TIMESTAMP)
+                ON CONFLICT(character_guid, item_id) DO NOTHING
+            """, rows)
+            h_count += len(rows)
+            
+        # Pets
+        pets_db = db_global.get("Pets", {})
+        p_count = 0
+        for char_key, p_list in pets_db.items():
+            if not p_list: continue
+            rows = [(char_key, pid) for pid in p_list]
+            cur.executemany("""
+                INSERT INTO pets (character_guid, species_id, last_updated)
+                VALUES (?, ?, CURRENT_TIMESTAMP)
+                ON CONFLICT(character_guid, species_id) DO NOTHING
+            """, rows)
+            p_count += len(rows)
+            
+        conn.commit()
+        print(f"✓ Ingested {m_count} mounts, {h_count} heirlooms, {p_count} pets")
+        
+    except Exception as e:
+        print(f"Error ingesting collections: {e}")
     finally:
         conn.close()
 

@@ -4,6 +4,7 @@
 ## Author: Holocron
 ## Version: 2.0
 ## SavedVariables: GoblinAIDB
+## Dependencies: HolocronCore
 
 GoblinAI_Core_v2.lua
 GoblinAI_Scanner_v2.lua

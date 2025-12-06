@@ -131,6 +131,11 @@ class SavedVariablesHandler(FileSystemEventHandler):
             print(f"Detected change in {filename}. Processing...")
             self.process_lua_file(event.src_path, filename)
 
+        # DeepPockets (Inventory & Recipes)
+        elif filename == "DeepPockets.lua":
+            print(f"Detected change in {filename}. Processing...")
+            self.process_lua_file(event.src_path, filename)
+
     def process_lua_file(self, filepath, filename):
         """
         Reads the Lua file, attempts to parse it (naive parsing or using a library),

@@ -14,6 +14,51 @@
     </div>
 </div>
 
+<!-- Reputation Matrix -->
+<div class="row mb-4">
+    <div class="col-md-12">
+        <div class="card">
+            <div class="card-header bg-primary text-white">Reputation Matrix (Account Wide)</div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-dark table-striped table-hover mb-0 text-center">
+                        <thead>
+                            <tr>
+                                <th class="text-start ps-3">Character</th>
+                                {% for col in matrix.columns %}
+                                <th>{{ col.name }}</th>
+                                {% endfor %}
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for row in matrix.rows %}
+                            <tr>
+                                <td class="text-start ps-3">
+                                    <strong class="text-{{ row.character.class|lower }}">{{ row.character.name
+                                        }}</strong>
+                                    <br><small class="text-muted">{{ row.character.realm }}</small>
+                                </td>
+                                {% for standing in row.standings %}
+                                <td>
+                                    {% if standing.is_max %}
+                                    <span class="badge bg-success">Renown {{ standing.renown }}</span>
+                                    {% elif standing.renown > 0 %}
+                                    <span class="badge bg-info">Renown {{ standing.renown }}</span>
+                                    {% else %}
+                                    <span class="badge bg-secondary">-</span>
+                                    {% endif %}
+                                </td>
+                                {% endfor %}
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- Paragon Meter -->
 <div class="row mb-4">
     <div class="col-md-12">

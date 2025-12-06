@@ -22,6 +22,14 @@ else
     echo "✅ PostgreSQL client found."
 fi
 
+# 3. Check Docker (Required for SimC)
+if ! command -v docker &> /dev/null; then
+    echo "⚠️  Docker not found. SimulationCraft integration will be disabled."
+    echo "   To enable SimC, install Docker Desktop: https://www.docker.com/products/docker-desktop/"
+else
+    echo "✅ Docker found."
+fi
+
 # 3. Setup Virtual Environment
 echo "----------------------------------------"
 echo "📦 Setting up Python Virtual Environment..."
@@ -63,6 +71,14 @@ if [[ $REPLY =~ ^[Yy]$ ]]; then
     psql $DATABASE_URL -f schema.sql
     psql $DATABASE_URL -f schema_codex.sql
     psql $DATABASE_URL -f schema_fabricator.sql
+    psql $DATABASE_URL -f schema_fabricator.sql
+    
+    # Load Seed Data
+    if [ -f "data_recipes.sql" ]; then
+        echo "   Loading recipe data..."
+        psql $DATABASE_URL -f data_recipes.sql > /dev/null
+    fi
+    
     # Add other schemas as needed
     echo "✅ Database initialized."
 fi

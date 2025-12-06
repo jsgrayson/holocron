@@ -95,3 +95,37 @@ CREATE TABLE IF NOT EXISTS goblin.recipes (
     last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (character_guid, recipe_id)
 );
+
+-- PetWeaver Tables
+
+-- Encounters: Stores NPC encounter data
+CREATE TABLE IF NOT EXISTS petweaver.encounters (
+    encounter_id VARCHAR(255) PRIMARY KEY, -- e.g., 'rock_collector'
+    name VARCHAR(255),
+    npc_data TEXT, -- JSON string of NPC pets and abilities
+    last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Strategies: Stores pet battle strategies
+CREATE TABLE IF NOT EXISTS petweaver.strategies (
+    strategy_id SERIAL PRIMARY KEY,
+    encounter_id VARCHAR(255) REFERENCES petweaver.encounters(encounter_id),
+    name VARCHAR(255),
+    script TEXT,
+    pet_1_species_id INT,
+    pet_2_species_id INT,
+    pet_3_species_id INT,
+    is_favorite BOOLEAN DEFAULT FALSE,
+    last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Collection: Stores player's pet collection
+CREATE TABLE IF NOT EXISTS petweaver.collection (
+    character_guid VARCHAR(255) REFERENCES holocron.characters(character_guid),
+    species_id INT,
+    pet_guid VARCHAR(255),
+    level INT,
+    quality INT,
+    stats TEXT, -- JSON string of stats
+    PRIMARY KEY (character_guid, pet_guid)
+);

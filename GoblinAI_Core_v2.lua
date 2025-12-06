@@ -18,17 +18,22 @@ addon.isInitialized = false
 -- Style System (PetWeaver-inspired)
 -- ============================================================================
 
+local theme, bgKey = Holocron:GetTheme("GoblinAI")
+local LSM = LibStub("LibSharedMedia-3.0")
+local bgFile = LSM and LSM:Fetch("background", bgKey) or "Interface\\DialogFrame\\UI-DialogBox-Background"
+local borderFile = LSM and LSM:Fetch("border", "Holocron Glow") or "Interface\\DialogFrame\\UI-DialogBox-Border"
+
 local STYLE = {
     colors = {
-        background = {0, 0, 0, 0.95},
-        border = {0.3, 0.3, 0.3, 1},
-        tabActive = {1, 0.84, 0, 1},  -- Gold
-        tabInactive = {0.2, 0.2, 0.2, 0.8},
-        header = {1, 0.84, 0, 1},     -- Gold
+        background = {0, 0, 0, 0.9},
+        border = {theme.r, theme.g, theme.b, 1}, -- Cyber Green
+        tabActive = {theme.r, theme.g, theme.b, 1},
+        tabInactive = {0.1, 0.1, 0.1, 0.8},
+        header = {theme.r, theme.g, theme.b, 1},
         text = {1, 1, 1, 1},
-        profit = {0, 1, 0, 1},         -- Green
-        loss = {1, 0, 0, 1},           -- Red
-        warning = {1, 0.5, 0, 1},      -- Orange
+        profit = {0, 1, 0, 1},
+        loss = {1, 0, 0, 1},
+        warning = {1, 0.5, 0, 1},
     },
     fonts = {
         title = "GameFontNormalHuge",
@@ -82,7 +87,7 @@ function addon:InitializeDB()
     GoblinAIDB.opportunities = GoblinAIDB.opportunities or {}
     GoblinAIDB.groups = GoblinAIDB.groups or {}
     GoblinAIDB.operations = GoblinAIDB.operations or {}
-    Goblin AIDB.ledger = GoblinAIDB.ledger or {}
+    GoblinAIDB.ledger = GoblinAIDB.ledger or {}
     GoblinAIDB.shoppingLists = GoblinAIDB.shoppingLists or {}
 end
 
@@ -155,12 +160,13 @@ local MainFrame = CreateFrame("Frame", "GoblinAIMainFrame", UIParent, "BackdropT
 MainFrame:SetSize(700, 600)
 MainFrame:SetPoint("CENTER")
 MainFrame:SetBackdrop({
-    bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
-    edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
-    tile = true, tileSize = 32, edgeSize = 32,
-    insets = { left = 8, right = 8, top = 8, bottom = 8 }
+    bgFile = bgFile,
+    edgeFile = borderFile,
+    tile = false, tileSize = 0, edgeSize = 16,
+    insets = { left = 4, right = 4, top = 4, bottom = 4 }
 })
-MainFrame:SetBackdropColor(unpack(STYLE.colors.background))
+MainFrame:SetBackdropColor(1, 1, 1, 1) -- Texture provides color
+MainFrame:SetBackdropBorderColor(theme.r, theme.g, theme.b, 1)
 MainFrame:EnableMouse(true)
 MainFrame:SetMovable(true)
 MainFrame:RegisterForDrag("LeftButton")

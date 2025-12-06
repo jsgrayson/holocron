@@ -67,7 +67,7 @@ class DashboardEngine:
         self.navigator.load_mock_data()
         self.knowledge.load_mock_data()
         self.goblin.load_mock_data()
-        self.codex.load_mock_data()
+        self.codex.load_from_wowhead_json()
         self.vault.load_mock_data()
         self.scout.load_mock_data()
         self.commander.load_mock_data()
@@ -132,8 +132,18 @@ class DashboardEngine:
         }
         
         # 7. Codex Guide
-        # Get current raid info
-        instance = self.codex.get_instance(1273) # Nerub-ar Palace
+        # Get current raid info - find Nerub-ar Palace by name
+        instance = None
+        for inst in self.codex.instances.values():
+            if inst.name == "Nerub-ar Palace":
+                instance = self.codex.get_instance(inst.id)
+                break
+        # Fallback to first available raid
+        if not instance:
+            for inst in self.codex.instances.values():
+                if inst.type == "Raid":
+                    instance = self.codex.get_instance(inst.id)
+                    break
         codex_status = {
             "current_raid": instance['name'] if instance else "Unknown",
             "bosses": len(instance['encounters']) if instance else 0
@@ -183,29 +193,31 @@ class DashboardEngine:
 
         return {
             "timestamp": datetime.datetime.now().strftime("%H:%M"),
-            "pathfinder": {
-                "nodes": self.pathfinder.graph.number_of_nodes(),
-                "edges": self.pathfinder.graph.number_of_edges(),
-                "current_location": getattr(self.pathfinder, 'current_player_zone', 'Unknown')
+            "modules": {
+                "pathfinder": {
+                    "nodes": self.pathfinder.graph.number_of_nodes(),
+                    "edges": self.pathfinder.graph.number_of_edges(),
+                    "current_location": getattr(self.pathfinder, 'current_player_zone', 'Unknown')
+                },
+                "diplomat": {
+                    "opportunities": len(diplomat_recs),
+                    "top_opportunity": diplomat_recs[0]["faction_name"] if diplomat_recs else "None"
+                },
+                "utility": {
+                    "mounts": utility_summary["mounts"]["owned"],
+                    "pets": utility_summary.get("pets", {}).get("owned", 0),
+                    "transmog": utility_summary.get("transmog", {}).get("owned", 0),
+                    "missing_easy": utility_summary["mounts"]["missing_by_difficulty"]["Easy"],
+                    "overall_percent": utility_summary["overall"]["percent"]
+                },
+                "navigator": navigator_status,
+                "knowledge": knowledge_status,
+                "goblin": goblin_status,
+                "codex": codex_status,
+                "vault": vault_status,
+                "scout": scout_status,
+                "commander": commander_status
             },
-            "diplomat": {
-                "opportunities": len(diplomat_recs), # Use diplomat_recs directly, it's a list
-                "top_opportunity": diplomat_recs[0]["faction_name"] if diplomat_recs else "None"
-            },
-            "utility": {
-                "mounts": utility_summary["mounts"]["owned"],
-                "pets": utility_summary.get("pets", {}).get("owned", 0), # Handle missing key if old version
-                "transmog": utility_summary.get("transmog", {}).get("owned", 0),
-                "missing_easy": utility_summary["mounts"]["missing_by_difficulty"]["Easy"],
-                "overall_percent": utility_summary["overall"]["percent"]
-            },
-            "navigator": navigator_status,
-            "knowledge": knowledge_status,
-            "goblin": goblin_status,
-            "codex": codex_status,
-            "vault": vault_status,
-            "scout": scout_status,
-            "commander": commander_status,
             "paragon_opportunities": paragon_opportunities
         }
 

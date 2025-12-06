@@ -331,6 +331,66 @@ class DiplomatEngine:
             "timestamp": datetime.now().isoformat()
         }
 
+    def get_reputation_matrix(self) -> Dict:
+        """
+        Get reputation matrix for all characters
+        Returns: { columns: [Factions], rows: [{char, standings: []}] }
+        """
+        # Define Major Factions to track
+        major_factions = [
+            {"id": 2600, "name": "Council of Dornogal"},
+            {"id": 2601, "name": "The Assembly of the Deeps"},
+            {"id": 2602, "name": "Hallowfall Arathi"},
+            {"id": 2603, "name": "The Severed Threads"}
+        ]
+        
+        # Get DB Connection
+        conn = sqlite3.connect("/Users/jgrayson/Documents/holocron/holocron.db")
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+        
+        try:
+            # 1. Get All Characters
+            cur.execute("SELECT character_guid, name, realm, class FROM characters ORDER BY name")
+            chars = [dict(row) for row in cur.fetchall()]
+            
+            rows = []
+            for char in chars:
+                standings = []
+                for faction in major_factions:
+                    # Get Standing
+                    cur.execute("""
+                        SELECT current_standing, renown_level 
+                        FROM reputation_standings 
+                        WHERE character_guid = ? AND faction_id = ?
+                    """, (char["character_guid"], faction["id"]))
+                    
+                    row = cur.fetchone()
+                    if row:
+                        standings.append({
+                            "renown": row["renown_level"],
+                            "value": row["current_standing"],
+                            "is_max": row["renown_level"] >= 25 # Assumption
+                        })
+                    else:
+                        standings.append({"renown": 0, "value": 0, "is_max": False})
+                
+                rows.append({
+                    "character": char,
+                    "standings": standings
+                })
+                
+            return {
+                "columns": major_factions,
+                "rows": rows
+            }
+            
+        except Exception as e:
+            print(f"Error generating matrix: {e}")
+            return {"columns": major_factions, "rows": []}
+        finally:
+            conn.close()
+
 if __name__ == "__main__":
     # Test the engine
     print("\n" + "="*70)
